@@ -55,6 +55,7 @@ class RecipeModel {
 
   factory RecipeModel.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
+    
     return RecipeModel(
       id: doc.id,
       title: data['title'] ?? '',
@@ -81,8 +82,8 @@ class RecipeModel {
       tags: List<String>.from(data['tags'] ?? []),
       totalCalories: data['totalCalories'] ?? 0,
       likesCount: data['likesCount'] ?? 0,
-      createdAt: (data['createdAt'] as Timestamp).toDate(),
-      updatedAt: (data['updatedAt'] as Timestamp).toDate(),
+      createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      updatedAt: (data['updatedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
   }
 
