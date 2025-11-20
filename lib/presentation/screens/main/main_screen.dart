@@ -5,7 +5,7 @@ import '../../providers/interaction_provider.dart';
 import 'profile_screen.dart';
 import 'recipes/create_recipe_screen.dart';
 import 'home_screen.dart';
-import 'saved_recipes_screen.dart';
+import 'saved/saved_recipes_screen.dart';
 import 'notifications_screen.dart';
 
 class MainScreen extends StatefulWidget {
