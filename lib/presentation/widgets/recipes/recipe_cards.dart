@@ -86,7 +86,7 @@ class RecipeCard extends StatelessWidget {
                     right: 6,
                     child: SaveButton(
                       recipeId: recipe.id,
-                      iconSize: 16,
+                      iconSize: 20,
                       useContainer: true,
                       padding: EdgeInsets.zero,
                     ),

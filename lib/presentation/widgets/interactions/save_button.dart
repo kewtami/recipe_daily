@@ -36,16 +36,10 @@ class SaveButton extends StatelessWidget {
 
         if (useContainer) {
           iconWidget = Container(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black,
-                  blurRadius: 8,
-                ),
-              ],
+              shape: BoxShape.circle,
             ),
             child: iconWidget,
           );
