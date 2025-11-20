@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/models/recipe_model.dart';
 import '../../providers/recipe_provider.dart';
+import '../../providers/interaction_provider.dart';
 import '../../widgets/recipes/recipe_cards.dart';
 import 'recipes/recipe_detail_screen.dart';
 
@@ -27,15 +29,25 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final provider = Provider.of<RecipeProvider>(context, listen: false);
+      final recipeProvider = Provider.of<RecipeProvider>(context, listen: false);
+      final interactionProvider = Provider.of<InteractionProvider>(context, listen: false);
+      final user = FirebaseAuth.instance.currentUser;
       
-      // Check if recipes already loaded
-      if (provider.recipes.isEmpty) {
+      // Load recipes
+      if (recipeProvider.recipes.isEmpty) {
         print('Loading recipes from Firebase...');
-        provider.subscribeToRecipes();
+        recipeProvider.subscribeToRecipes();
       } else {
-        print('Using cached recipes (${provider.recipes.length} items)');
+        print('Using cached recipes (${recipeProvider.recipes.length} items)');
+      }
+      
+      // Subscribe to user interactions
+      if (user != null) {
+        print('Subscribing to user interactions...');
+        interactionProvider.subscribeToLikedRecipes(user.uid);
+        interactionProvider.subscribeToSavedRecipes(user.uid);
       }
     });
 
