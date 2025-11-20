@@ -5,6 +5,7 @@ import 'package:recipe_daily/firebase_options.dart';
 import 'package:recipe_daily/presentation/providers/recipe_provider.dart';
 import 'presentation/providers/auth_provider.dart';
 import 'package:recipe_daily/presentation/providers/interaction_provider.dart';
+import 'package:recipe_daily/presentation/providers/collection_provider.dart';
 import 'presentation/screens/auth/auth_wrapper.dart';
 import 'core/constants/app_colors.dart';
 import 'core/services/calorie_service.dart';
@@ -40,6 +41,7 @@ class RecipeDailyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => RecipeProvider()),
         ChangeNotifierProvider(create: (_) => InteractionProvider()),
+        ChangeNotifierProvider(create: (_) => CollectionProvider()),
       ],
       child: MaterialApp(
         title: 'Recipe Daily',
