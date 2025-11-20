@@ -63,12 +63,16 @@ class InteractionProvider extends ChangeNotifier {
     _isTogglingLike = true;
     
     try {
+      // Check current state before toggle
+      final isCurrentlyLiked = _likedRecipeIds.contains(recipeId);
+      
       // Optimistic update
-      final wasLiked = _likedRecipeIds.contains(recipeId);
-      if (wasLiked) {
+      if (isCurrentlyLiked) {
+        // Currently liked
         _likedRecipeIds.remove(recipeId);
-        _likesCountCache[recipeId] = (_likesCountCache[recipeId] ?? 0) - 1;
+        _likesCountCache[recipeId] = (_likesCountCache[recipeId] ?? 1) - 1;
       } else {
+        // Currently not liked
         _likedRecipeIds.add(recipeId);
         _likesCountCache[recipeId] = (_likesCountCache[recipeId] ?? 0) + 1;
       }
@@ -78,13 +82,14 @@ class InteractionProvider extends ChangeNotifier {
       await _service.toggleLike(recipeId, userId);
     } catch (e) {
       // Revert on error
-      final wasLiked = !_likedRecipeIds.contains(recipeId);
-      if (wasLiked) {
-        _likedRecipeIds.remove(recipeId);
-        _likesCountCache[recipeId] = (_likesCountCache[recipeId] ?? 0) - 1;
-      } else {
+      final isCurrentlyLiked = !_likedRecipeIds.contains(recipeId); // Opposite of current state
+      
+      if (isCurrentlyLiked) {
         _likedRecipeIds.add(recipeId);
         _likesCountCache[recipeId] = (_likesCountCache[recipeId] ?? 0) + 1;
+      } else {
+        _likedRecipeIds.remove(recipeId);
+        _likesCountCache[recipeId] = (_likesCountCache[recipeId] ?? 1) - 1;
       }
       notifyListeners();
       rethrow;
@@ -116,11 +121,15 @@ class InteractionProvider extends ChangeNotifier {
     _isTogglingSave = true;
 
     try {
+      // Check current state before toggle
+      final isCurrentlySaved = _savedRecipeIds.contains(recipeId);
+      
       // Optimistic update
-      final wasSaved = _savedRecipeIds.contains(recipeId);
-      if (wasSaved) {
+      if (isCurrentlySaved) {
+        // Currently saved
         _savedRecipeIds.remove(recipeId);
       } else {
+        // Currently not saved
         _savedRecipeIds.add(recipeId);
       }
       notifyListeners();
@@ -129,11 +138,12 @@ class InteractionProvider extends ChangeNotifier {
       await _service.toggleSave(recipeId, userId);
     } catch (e) {
       // Revert on error
-      final wasSaved = _savedRecipeIds.contains(recipeId);
-      if (wasSaved) {
-        _savedRecipeIds.remove(recipeId);
-      } else {
+      final isCurrentlySaved = !_savedRecipeIds.contains(recipeId);
+      
+      if (isCurrentlySaved) {
         _savedRecipeIds.add(recipeId);
+      } else {
+        _savedRecipeIds.remove(recipeId);
       }
       notifyListeners();
       rethrow;
