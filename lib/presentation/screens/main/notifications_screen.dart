@@ -1,56 +1,35 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:timeago/timeago.dart' as timeago;
+import '../../../core/constants/app_colors.dart';
+import 'recipes/recipe_detail_screen.dart';
 
-class NotificationsScreen extends StatefulWidget {
+class NotificationsScreen extends StatelessWidget {
   const NotificationsScreen({Key? key}) : super(key: key);
 
   @override
-  State<NotificationsScreen> createState() => _NotificationsScreenState();
-}
-
-class _NotificationsScreenState extends State<NotificationsScreen> {
-  final Map<String, bool> _followStatus = {
-    'user1': false,
-    'user2': true,
-    'user3': false,
-  };
-
-  final List<NotificationItem> _todayNotifications = [
-    NotificationItem(
-      id: '1',
-      userId: 'user1',
-      userName: 'Combucha',
-      avatarUrl: '',
-      action: 'now following you',
-      time: '5 mins',
-      type: NotificationType.follow,
-    ),
-    NotificationItem(
-      id: '2',
-      userId: 'user2',
-      userName: 'Zayn',
-      secondUserName: 'Combucha',
-      avatarUrl: '',
-      action: 'liked your recipe',
-      time: '20 mins',
-      type: NotificationType.like,
-      recipeImageUrl: '',
-    ),
-  ];
-
-  final List<NotificationItem> _yesterdayNotifications = [
-    NotificationItem(
-      id: '3',
-      userId: 'user3',
-      userName: 'Zayn',
-      avatarUrl: '',
-      action: 'have followed you',
-      time: '1 day 1h',
-      type: NotificationType.follow,
-    ),
-  ];
-
-  @override
   Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      return Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.notifications_off, size: 64, color: Colors.grey[400]),
+              const SizedBox(height: 16),
+              Text(
+                'Please login to view notifications',
+                style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -61,272 +40,422 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           style: TextStyle(
             fontSize: 24,
             fontWeight: FontWeight.bold,
-            color: Color(0xFF1E3A8A),
+            color: AppColors.secondary,
           ),
         ),
       ),
-      body: _buildNotificationsList(),
-    );
-  }
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .collection('notifications')
+            .orderBy('createdAt', descending: true)
+            .limit(50)
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: CircularProgressIndicator(color: AppColors.primary),
+            );
+          }
 
-  Widget _buildNotificationsList() {
-    if (_todayNotifications.isEmpty && _yesterdayNotifications.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.notifications_none,
-              size: 80,
-              color: Colors.grey[400],
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'No notifications yet',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey[600],
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'You\'ll see notifications here',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[500],
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return ListView(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      children: [
-        if (_todayNotifications.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          _buildSectionHeader('Today'),
-          ..._todayNotifications.map((notification) {
-            return _buildNotificationItem(notification);
-          }).toList(),
-        ],
-        
-        if (_yesterdayNotifications.isNotEmpty) ...[
-          const SizedBox(height: 24),
-          _buildSectionHeader('Yesterday'),
-          ..._yesterdayNotifications.map((notification) {
-            return _buildNotificationItem(notification);
-          }).toList(),
-        ],
-        
-        const SizedBox(height: 24),
-      ],
-    );
-  }
-
-  Widget _buildSectionHeader(String title) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Text(
-        title,
-        style: const TextStyle(
-          fontSize: 18,
-          fontWeight: FontWeight.bold,
-          color: Color(0xFF1E3A8A),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNotificationItem(NotificationItem notification) {
-    final isFollowed = _followStatus[notification.userId] ?? false;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      child: Row(
-        children: [
-          // Avatar
-          CircleAvatar(
-            radius: 24,
-            backgroundColor: Colors.grey[300],
-            backgroundImage: notification.avatarUrl.isNotEmpty
-                ? NetworkImage(notification.avatarUrl)
-                : null,
-            child: notification.avatarUrl.isEmpty
-                ? Text(
-                    notification.userName[0].toUpperCase(),
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF1E3A8A),
-                    ),
-                  )
-                : null,
-          ),
-          
-          const SizedBox(width: 12),
-          
-          // Content
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildNotificationText(notification),
-                const SizedBox(height: 2),
-                Text(
-                  notification.time,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[500],
+          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.notifications_outlined,
+                    size: 64,
+                    color: Colors.grey[400],
                   ),
-                ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'No notifications yet',
+                    style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'We\'ll notify you when something happens',
+                    style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          final notifications = snapshot.data!.docs;
+          final groupedNotifications = _groupNotifications(notifications);
+
+          return ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              if (groupedNotifications['today']?.isNotEmpty ?? false) ...[
+                const _SectionHeader(title: 'Today'),
+                const SizedBox(height: 12),
+                ...groupedNotifications['today']!
+                    .map((notif) => _NotificationItem(notification: notif))
+                    .toList(),
+                const SizedBox(height: 24),
               ],
-            ),
-          ),
-          
-          const SizedBox(width: 12),
-          
-          // Action button or recipe image
-          if (notification.type == NotificationType.follow)
-            ElevatedButton(
-              onPressed: () {
-                setState(() {
-                  _followStatus[notification.userId] = !isFollowed;
-                });
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: isFollowed ? Colors.grey[300] : const Color(0xFFFF6B35),
-                foregroundColor: isFollowed ? Colors.grey[700] : Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                elevation: 0,
-              ),
-              child: Text(
-                isFollowed ? 'Followed' : 'Follow',
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            )
-          else if (notification.type == NotificationType.like && 
-                   notification.recipeImageUrl != null)
-            GestureDetector(
-              onTap: () {
-                // Navigate to recipe detail
-              },
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: notification.recipeImageUrl!.isNotEmpty
-                    ? Image.network(
-                        notification.recipeImageUrl!,
-                        width: 56,
-                        height: 56,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          return Container(
-                            width: 56,
-                            height: 56,
-                            color: Colors.grey[300],
-                            child: const Icon(Icons.image, size: 24),
-                          );
-                        },
-                      )
-                    : Container(
-                        width: 56,
-                        height: 56,
-                        color: Colors.grey[300],
-                        child: const Icon(Icons.image, size: 24),
-                      ),
-              ),
-            ),
-        ],
+              if (groupedNotifications['yesterday']?.isNotEmpty ?? false) ...[
+                const _SectionHeader(title: 'Yesterday'),
+                const SizedBox(height: 12),
+                ...groupedNotifications['yesterday']!
+                    .map((notif) => _NotificationItem(notification: notif))
+                    .toList(),
+                const SizedBox(height: 24),
+              ],
+              if (groupedNotifications['thisWeek']?.isNotEmpty ?? false) ...[
+                const _SectionHeader(title: 'This Week'),
+                const SizedBox(height: 12),
+                ...groupedNotifications['thisWeek']!
+                    .map((notif) => _NotificationItem(notification: notif))
+                    .toList(),
+                const SizedBox(height: 24),
+              ],
+              if (groupedNotifications['older']?.isNotEmpty ?? false) ...[
+                const _SectionHeader(title: 'Older'),
+                const SizedBox(height: 12),
+                ...groupedNotifications['older']!
+                    .map((notif) => _NotificationItem(notification: notif))
+                    .toList(),
+              ],
+            ],
+          );
+        },
       ),
     );
   }
 
-  Widget _buildNotificationText(NotificationItem notification) {
-    if (notification.secondUserName != null) {
-      return RichText(
-        text: TextSpan(
-          style: TextStyle(
-            fontSize: 14,
-            color: Colors.grey[800],
-          ),
-          children: [
-            TextSpan(
-              text: notification.userName,
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF1E3A8A),
-              ),
-            ),
-            const TextSpan(text: ' and '),
-            TextSpan(
-              text: notification.secondUserName,
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF1E3A8A),
-              ),
-            ),
-            TextSpan(text: ' ${notification.action}'),
-          ],
-        ),
-      );
-    } else {
-      return RichText(
-        text: TextSpan(
-          style: TextStyle(
-            fontSize: 14,
-            color: Colors.grey[800],
-          ),
-          children: [
-            TextSpan(
-              text: notification.userName,
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF1E3A8A),
-              ),
-            ),
-            TextSpan(text: ' ${notification.action}'),
-          ],
-        ),
-      );
-    }
+  Map<String, List<QueryDocumentSnapshot>> _groupNotifications(
+    List<QueryDocumentSnapshot> notifications,
+  ) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+    final weekAgo = today.subtract(const Duration(days: 7));
+
+    return {
+      'today': notifications.where((notif) {
+        final createdAt = (notif.data() as Map)['createdAt'] as Timestamp?;
+        if (createdAt == null) return false;
+        final date = createdAt.toDate();
+        return date.isAfter(today);
+      }).toList(),
+      'yesterday': notifications.where((notif) {
+        final createdAt = (notif.data() as Map)['createdAt'] as Timestamp?;
+        if (createdAt == null) return false;
+        final date = createdAt.toDate();
+        return date.isAfter(yesterday) && date.isBefore(today);
+      }).toList(),
+      'thisWeek': notifications.where((notif) {
+        final createdAt = (notif.data() as Map)['createdAt'] as Timestamp?;
+        if (createdAt == null) return false;
+        final date = createdAt.toDate();
+        return date.isAfter(weekAgo) && date.isBefore(yesterday);
+      }).toList(),
+      'older': notifications.where((notif) {
+        final createdAt = (notif.data() as Map)['createdAt'] as Timestamp?;
+        if (createdAt == null) return false;
+        final date = createdAt.toDate();
+        return date.isBefore(weekAgo);
+      }).toList(),
+    };
   }
 }
 
-// Models
-enum NotificationType {
-  follow,
-  like,
-  comment,
+class _SectionHeader extends StatelessWidget {
+  final String title;
+
+  const _SectionHeader({required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      title,
+      style: const TextStyle(
+        fontSize: 18,
+        fontWeight: FontWeight.bold,
+        color: AppColors.secondary,
+      ),
+    );
+  }
 }
 
-class NotificationItem {
-  final String id;
-  final String userId;
-  final String userName;
-  final String? secondUserName;
-  final String avatarUrl;
-  final String action;
-  final String time;
-  final NotificationType type;
-  final String? recipeImageUrl;
+class _NotificationItem extends StatefulWidget {
+  final QueryDocumentSnapshot notification;
 
-  NotificationItem({
-    required this.id,
-    required this.userId,
-    required this.userName,
-    this.secondUserName,
-    required this.avatarUrl,
-    required this.action,
-    required this.time,
-    required this.type,
-    this.recipeImageUrl,
-  });
+  const _NotificationItem({required this.notification});
+
+  @override
+  State<_NotificationItem> createState() => _NotificationItemState();
+}
+
+class _NotificationItemState extends State<_NotificationItem> {
+  bool _isFollowing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkFollowStatus();
+  }
+
+  Future<void> _checkFollowStatus() async {
+    final data = widget.notification.data() as Map<String, dynamic>;
+    if (data['type'] != 'follow') return;
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final followerId = data['fromUserId'] as String?;
+    if (followerId == null) return;
+
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('following')
+          .doc(followerId)
+          .get();
+
+      if (mounted) {
+        setState(() {
+          _isFollowing = doc.exists;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error checking follow status: $e');
+    }
+  }
+
+  Future<void> _toggleFollow() async {
+    final data = widget.notification.data() as Map<String, dynamic>;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final followerId = data['fromUserId'] as String?;
+    if (followerId == null) return;
+
+    setState(() {
+      _isFollowing = !_isFollowing;
+    });
+
+    try {
+      final followingRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('following')
+          .doc(followerId);
+
+      if (_isFollowing) {
+        await followingRef.set({
+          'followedAt': FieldValue.serverTimestamp(),
+        });
+      } else {
+        await followingRef.delete();
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              _isFollowing
+                  ? 'Now following ${data['fromUserName']}'
+                  : 'Unfollowed ${data['fromUserName']}',
+            ),
+            backgroundColor:
+                _isFollowing ? AppColors.success : Colors.grey[700],
+            duration: const Duration(seconds: 1),
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _isFollowing = !_isFollowing;
+      });
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to update follow status'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final data = widget.notification.data() as Map<String, dynamic>;
+    final type = data['type'] as String;
+    final fromUserName = data['fromUserName'] as String? ?? 'Someone';
+    final fromUserPhoto = data['fromUserPhotoUrl'] as String?;
+    final createdAt = (data['createdAt'] as Timestamp?)?.toDate();
+    final recipeId = data['recipeId'] as String?;
+    final recipeImage = data['recipeImage'] as String?;
+
+    IconData icon;
+    Color iconColor;
+    String message;
+    Widget? actionWidget;
+
+    switch (type) {
+      case 'follow':
+        icon = Icons.person_add;
+        iconColor = AppColors.primary;
+        message = 'now following you';
+        actionWidget = _buildFollowButton();
+        break;
+      case 'like':
+        icon = Icons.favorite;
+        iconColor = Colors.red;
+        message = 'liked your recipe';
+        break;
+      case 'comment':
+        icon = Icons.comment;
+        iconColor = AppColors.primary;
+        message = 'commented on your recipe';
+        break;
+      default:
+        icon = Icons.notifications;
+        iconColor = Colors.grey;
+        message = 'interacted with you';
+    }
+
+    return GestureDetector(
+      onTap: () {
+        if (recipeId != null && (type == 'like' || type == 'comment')) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => RecipeDetailScreen(recipeId: recipeId),
+            ),
+          );
+        }
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: data['read'] == true ? Colors.white : Colors.blue[50],
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey[200]!),
+        ),
+        child: Row(
+          children: [
+            // User Avatar
+            CircleAvatar(
+              radius: 24,
+              backgroundImage:
+                  fromUserPhoto != null ? NetworkImage(fromUserPhoto) : null,
+              child: fromUserPhoto == null
+                  ? Text(
+                      fromUserName[0].toUpperCase(),
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    )
+                  : null,
+            ),
+            const SizedBox(width: 12),
+
+            // Content
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  RichText(
+                    text: TextSpan(
+                      style: const TextStyle(
+                        fontSize: 15,
+                        color: AppColors.secondary,
+                      ),
+                      children: [
+                        TextSpan(
+                          text: fromUserName,
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        if (type == 'follow' && data['additionalUsers'] != null)
+                          TextSpan(
+                            text: ' and ',
+                            style: TextStyle(color: Colors.grey[700]),
+                          ),
+                        if (type == 'follow' && data['additionalUsers'] != null)
+                          TextSpan(
+                            text: data['additionalUserName'] as String? ?? 'others',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        TextSpan(
+                          text: ' $message',
+                          style: TextStyle(color: Colors.grey[700]),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (createdAt != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      timeago.format(createdAt),
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+
+            // Action or Recipe Image
+            if (actionWidget != null)
+              actionWidget
+            else if (recipeImage != null) ...[
+              const SizedBox(width: 12),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.network(
+                  recipeImage,
+                  width: 50,
+                  height: 50,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) {
+                    return Container(
+                      width: 50,
+                      height: 50,
+                      color: Colors.grey[300],
+                      child: const Icon(Icons.image, size: 24),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFollowButton() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: _isFollowing ? Colors.grey[200] : AppColors.primary,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: GestureDetector(
+        onTap: _toggleFollow,
+        child: Text(
+          _isFollowing ? 'Followed' : 'Follow',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: _isFollowing ? AppColors.secondary : Colors.white,
+          ),
+        ),
+      ),
+    );
+  }
 }
