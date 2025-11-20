@@ -42,7 +42,7 @@ class _SavedRecipesScreenState extends State<SavedRecipesScreen> {
 
   void _showCreateCollectionDialog() {
     _collectionNameController.clear();
-    
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -149,7 +149,7 @@ class _SavedRecipesScreenState extends State<SavedRecipesScreen> {
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
-    
+
     if (user == null) {
       return Scaffold(
         body: Center(
@@ -194,8 +194,8 @@ class _SavedRecipesScreenState extends State<SavedRecipesScreen> {
           _buildToggleButtons(),
           const SizedBox(height: 20),
           Expanded(
-            child: _selectedTab == 0 
-                ? _buildLatestTab(user.uid) 
+            child: _selectedTab == 0
+                ? _buildLatestTab(user.uid)
                 : _buildCollectionTab(user.uid),
           ),
         ],
@@ -402,24 +402,33 @@ class _SavedRecipesScreenState extends State<SavedRecipesScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 20),
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 2,
-            childAspectRatio: 1.2,
+            childAspectRatio: 1.0,
             crossAxisSpacing: 16,
             mainAxisSpacing: 16,
           ),
           itemCount: collections.length,
           itemBuilder: (context, index) {
             final collection = collections[index];
-            return _buildCollectionCard(collection);
+            return _buildCollectionCard(collection, index);
           },
         );
       },
     );
   }
 
-  Widget _buildCollectionCard(Map<String, dynamic> collection) {
+  Widget _buildCollectionCard(Map<String, dynamic> collection, int index) {
     final name = collection['name'] as String;
-    final recipeCount = (collection['recipes'] as List?)?.length ?? 0;
-    final color = _getCollectionColor(name);
+    final recipeIds = (collection['recipes'] as List?) ?? [];
+    final recipeCount = recipeIds.length;
+
+    final List<Color> colors = [
+      AppColors.secondary,
+      AppColors.primary,
+    ];
+
+    final labelColor = colors[index % 2].withOpacity(0.7);
+
+    final firstRecipeId = recipeIds.isNotEmpty ? recipeIds[0] : null;
 
     return GestureDetector(
       onTap: () {
@@ -433,75 +442,102 @@ class _SavedRecipesScreenState extends State<SavedRecipesScreen> {
           ),
         ).then((_) => _loadCollections());
       },
-      child: Container(
-        decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.1),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Stack(
-          children: [
-            Positioned(
-              bottom: 16,
-              left: 16,
-              right: 16,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+      child: FutureBuilder<DocumentSnapshot>(
+        future: firstRecipeId != null
+            ? FirebaseFirestore.instance
+                .collection('recipes')
+                .doc(firstRecipeId)
+                .get()
+            : null,
+        builder: (context, snapshot) {
+          String? imageUrl;
+
+          if (snapshot.hasData && snapshot.data!.exists) {
+            final data = snapshot.data!.data() as Map<String, dynamic>;
+            imageUrl = data['coverImageUrl'];
+          }
+
+          return AspectRatio(
+            aspectRatio: 1.0,
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.grey[200],
+                borderRadius: BorderRadius.circular(16),
+                image: imageUrl != null
+                    ? DecorationImage(
+                        image: NetworkImage(imageUrl),
+                        fit: BoxFit.cover,
+                      )
+                    : null,
+              ),
+              child: Stack(
                 children: [
-                  Text(
-                    name,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: GestureDetector(
+                      onTap: () => _showCollectionOptions(collection),
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Center(
+                          child: Icon(
+                            Icons.more_horiz,
+                            size: 20,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ),
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '$recipeCount ${recipeCount == 1 ? 'recipe' : 'recipes'}',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.white.withOpacity(0.9),
+
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: labelColor,
+                        borderRadius: const BorderRadius.vertical(
+                          bottom: Radius.circular(16),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            name,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            "$recipeCount recipes",
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                            ),
+                          )
+                        ],
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
-            Positioned(
-              top: 8,
-              right: 8,
-              child: IconButton(
-                icon: const Icon(Icons.more_vert, color: Colors.white),
-                onPressed: () {
-                  _showCollectionOptions(collection);
-                },
-              ),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
-  }
-
-  Color _getCollectionColor(String name) {
-    final colors = [
-      const Color(0xFF1E3A8A), // Dark Blue
-      const Color(0xFFFF6B35), // Orange
-      const Color(0xFF059669), // Green
-      const Color(0xFF7C3AED), // Purple
-      const Color(0xFFDC2626), // Red
-      const Color(0xFF0891B2), // Cyan
-    ];
-    
-    return colors[name.length % colors.length];
   }
 
   void _showCollectionOptions(Map<String, dynamic> collection) {
@@ -541,7 +577,7 @@ class _SavedRecipesScreenState extends State<SavedRecipesScreen> {
 
   void _showRenameCollectionDialog(Map<String, dynamic> collection) {
     _collectionNameController.text = collection['name'];
-    
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
