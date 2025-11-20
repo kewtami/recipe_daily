@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:recipe_daily/presentation/widgets/interactions/save_button.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/models/recipe_model.dart';
+import '../../providers/interaction_provider.dart';
 
 /// Compact recipe card - used in grids and lists
 class RecipeCard extends StatelessWidget {
@@ -19,6 +23,8 @@ class RecipeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
+
     return GestureDetector(
       onTap: onTap,
       child: Column(
@@ -74,21 +80,15 @@ class RecipeCard extends StatelessWidget {
                   ),
                 
                 // Bookmark button
-                if (!showMoreButton)
+                if (!showMoreButton && user != null)
                   Positioned(
                     top: 6,
                     right: 6,
-                    child: Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: const BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.bookmark_border,
-                        size: 16,
-                        color: AppColors.primary,
-                      ),
+                    child: SaveButton(
+                      recipeId: recipe.id,
+                      iconSize: 16,
+                      useContainer: true,
+                      padding: EdgeInsets.zero,
                     ),
                   ),
                 
@@ -140,14 +140,14 @@ class RecipeCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   '${recipe.totalCalories} Kcal',
-                  style: TextStyle(fontSize: 10, color: AppColors.secondary),
+                  style: const TextStyle(fontSize: 10, color: AppColors.secondary),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
               Text(
                 recipe.difficulty.displayName,
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 10, 
                   color: AppColors.secondary,
                   fontWeight: FontWeight.w600,
@@ -188,6 +188,8 @@ class TrendingRecipeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
+
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -269,49 +271,98 @@ class TrendingRecipeCard extends StatelessWidget {
                 ),
                 
                 // Likes badge
-                Positioned(
-                  top: 12,
-                  left: 12,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.95),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.favorite, size: 16, color: Colors.red),
-                        const SizedBox(width: 6),
-                        Text(
-                          '${recipe.likesCount}',
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
+                if (user != null)
+                  Positioned(
+                    top: 12,
+                    left: 12,
+                    child: Consumer<InteractionProvider>(
+                      builder: (context, provider, _) {
+                        final isLiked = provider.isRecipeLiked(recipe.id);
+                        final likesCount = provider.getLikesCount(recipe.id, recipe.likesCount);
+                        
+                        return GestureDetector(
+                          onTap: () async {
+                            try {
+                              await provider.toggleLike(recipe.id, user.uid);
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Row(
+                                      children: [
+                                        Icon(
+                                          isLiked ? Icons.favorite_border : Icons.favorite,
+                                          color: Colors.white,
+                                          size: 20,
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Text(isLiked ? 'Like removed' : 'Recipe liked'),
+                                      ],
+                                    ),
+                                    backgroundColor: isLiked ? Colors.grey[700] : Colors.red,
+                                    duration: const Duration(seconds: 1),
+                                  ),
+                                );
+                              }
+                            } catch (e) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Failed to update like'),
+                                    backgroundColor: AppColors.error,
+                                  ),
+                                );
+                              }
+                            }
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.95),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  isLiked ? Icons.favorite : Icons.favorite_border,
+                                  size: 16,
+                                  color: isLiked ? Colors.red : Colors.grey[700],
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  '$likesCount',
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
+                        );
+                      },
                     ),
                   ),
-                ),
                 
                 // Bookmark button
-                Positioned(
-                  top: 12,
-                  right: 12,
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.bookmark_border,
-                      size: 20,
-                      color: AppColors.primary,
+                if (user != null)
+                  Positioned(
+                    top: 12,
+                    right: 12,
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                      ),
+                      child: SaveButton(
+                        recipeId: recipe.id,
+                        iconSize: 20,
+                        useContainer: false,
+                        padding: EdgeInsets.zero,
+                      ),
                     ),
                   ),
-                ),
                 
                 // Play button
                 if (recipe.coverVideoUrl != null)
