@@ -76,49 +76,81 @@ class InteractionService {
   
   // ==================== SAVED RECIPES ====================
 
-  // Toggle save on a recipe
+  // Toggle save on a recipe 
   Future<void> toggleSave(String recipeId, String userId) async {
-    final saveQuery = await _firestore
+    final userSaveRef = _firestore
+        .collection('users')
+        .doc(userId)
         .collection('saved_recipes')
-        .where('recipeId', isEqualTo: recipeId)
-        .where('userId', isEqualTo: userId)
-        .limit(1)
-        .get();
+        .doc(recipeId);
+    
+    final userSaveDoc = await userSaveRef.get();
 
-    if (saveQuery.docs.isEmpty) {
+    if (!userSaveDoc.exists) {
       // Add save
-      await _firestore.collection('saved_recipes').add({
-        'recipeId': recipeId,
-        'userId': userId,
+      await userSaveRef.set({
         'savedAt': FieldValue.serverTimestamp(),
       });
     } else {
-      // Remove save
-      await _firestore.collection('saved_recipes').doc(saveQuery.docs.first.id).delete();
+      // Unsave
+      await _unsaveRecipeCompletely(recipeId, userId);
     }
+  }
+
+  // Completely unsave a recipe
+  Future<void> _unsaveRecipeCompletely(String recipeId, String userId) async {
+    final batch = _firestore.batch();
+    
+    // Remove from saved_recipes
+    final userSaveRef = _firestore
+        .collection('users')
+        .doc(userId)
+        .collection('saved_recipes')
+        .doc(recipeId);
+    batch.delete(userSaveRef);
+    
+    // Remove from all collections
+    final collectionsSnapshot = await _firestore
+        .collection('users')
+        .doc(userId)
+        .collection('collections')
+        .get();
+    
+    for (var collectionDoc in collectionsSnapshot.docs) {
+      final recipes = (collectionDoc.data()['recipes'] as List?)?.cast<String>() ?? [];
+      
+      if (recipes.contains(recipeId)) {
+        batch.update(collectionDoc.reference, {
+          'recipes': FieldValue.arrayRemove([recipeId]),
+        });
+      }
+    }
+    
+    await batch.commit();
   }
 
   // Check if user saved a recipe
   Future<bool> isRecipeSaved(String recipeId, String userId) async {
-    final saveQuery = await _firestore
+    final userSaveDoc = await _firestore
+        .collection('users')
+        .doc(userId)
         .collection('saved_recipes')
-        .where('recipeId', isEqualTo: recipeId)
-        .where('userId', isEqualTo: userId)
-        .limit(1)
+        .doc(recipeId)
         .get();
 
-    return saveQuery.docs.isNotEmpty;
+    return userSaveDoc.exists;
   }
 
   // Get all saved recipe IDs for a user
   Stream<List<String>> getSavedRecipeIds(String userId) {
     return _firestore
+        .collection('users')
+        .doc(userId)
         .collection('saved_recipes')
-        .where('userId', isEqualTo: userId)
         .orderBy('savedAt', descending: true)
         .snapshots()
         .map((snapshot) => snapshot.docs
-            .map((doc) => doc.data()['recipeId'] as String)
+            .map((doc) => doc.id) // doc.id is the recipeId
             .toList());
   }
   
