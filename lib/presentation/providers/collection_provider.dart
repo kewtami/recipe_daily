@@ -20,7 +20,7 @@ class CollectionProvider with ChangeNotifier {
           .collection('users')
           .doc(userId)
           .collection('collections')
-          .orderBy('createdAt', descending: false)
+          .orderBy('createdAt', descending: true)
           .get();
 
       _collections = snapshot.docs.map((doc) {
