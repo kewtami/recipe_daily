@@ -133,11 +133,11 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           // Logo
           Image.asset(
-            'assets/images/logo.png',
+            'assets/images/logo_text.png',
             height: 50,
             errorBuilder: (context, error, stackTrace) {
               return const Text(
-                'RECIPE\nDAILY',
+                'RECIPE DAILY',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
