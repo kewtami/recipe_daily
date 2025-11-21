@@ -72,14 +72,14 @@ class RecipeCard extends StatelessWidget {
                     child: GestureDetector(
                       onTap: onMoreTap,
                       child: Container(
-                        padding: const EdgeInsets.all(6),
+                        padding: const EdgeInsets.all(8),
                         decoration: const BoxDecoration(
                           color: Colors.white,
                           shape: BoxShape.circle,
                         ),
                         child: const Icon(
                           Icons.more_horiz,
-                          size: 16,
+                          size: 20,
                           color: AppColors.primary,
                         ),
                       ),
