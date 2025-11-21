@@ -7,7 +7,7 @@ import '../../widgets/recipes/recipe_cards.dart';
 import '../../widgets/recipes/recipe_options_bottom_sheet.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/models/recipe_model.dart';
-import 'recipes/my_recipe_detail_screen.dart';
+import 'recipes/recipe_detail_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({Key? key}) : super(key: key);
@@ -328,10 +328,14 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => MyRecipeDetailScreen(recipeId: recipe.id),
+                  builder: (context) => RecipeDetailScreen(
+                    recipeId: recipe.id,
+                    hideAuthor: recipe.authorId == FirebaseAuth.instance.currentUser?.uid,
+                  ),
                 ),
               );
             },
+            showOnlyOwnerRecipes: true,
             onMoreTap: () => _showRecipeOptions(context, recipe),
           );
         },
@@ -398,21 +402,24 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                   Navigator.pop(context);
                 },
               ),
-              const Divider(),
-              ListTile(
-                leading: const Icon(Icons.logout, color: AppColors.primary),
-                title: const Text('Logout'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showLogoutDialog(context);
-                },
-              ),
               ListTile(
                 leading: const Icon(Icons.delete_forever, color: AppColors.error),
                 title: const Text('Delete Account'),
                 onTap: () {
                   Navigator.pop(context);
                   _showDeleteAccountDialog(context);
+                },
+              ),
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.logout, color: AppColors.primary),
+                title: const Text(
+                  'Logout',
+                  style: TextStyle(color: AppColors.primary)
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showLogoutDialog(context);
                 },
               ),
             ],
