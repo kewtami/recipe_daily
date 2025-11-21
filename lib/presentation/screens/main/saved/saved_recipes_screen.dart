@@ -475,8 +475,8 @@ class _SavedRecipesScreenState extends State<SavedRecipesScreen> {
               child: Stack(
                 children: [
                   Positioned(
-                    top: 8,
-                    right: 8,
+                    top: 6,
+                    right: 6,
                     child: GestureDetector(
                       onTap: () => _showCollectionOptions(collection),
                       child: Container(
