@@ -13,10 +13,12 @@ import '../../../providers/interaction_provider.dart';
 
 class RecipeDetailScreen extends StatefulWidget {
   final String recipeId;
+  final bool hideAuthor;
 
   const RecipeDetailScreen({
     Key? key,
     required this.recipeId,
+    this.hideAuthor = false,
   }) : super(key: key);
 
   @override
@@ -155,7 +157,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                       if (recipe.tags.isNotEmpty) const SizedBox(height: 32),
 
                       // Author Card
-                      _buildAuthorCard(recipe),
+                      if (!widget.hideAuthor) _buildAuthorCard(recipe),
                       const SizedBox(height: 32),
 
                       // Comments Section
