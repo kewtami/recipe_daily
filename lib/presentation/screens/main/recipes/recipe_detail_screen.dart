@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:recipe_daily/presentation/screens/main/recipes/image_viewer_screen.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/models/recipe_model.dart';
 import '../../../providers/recipe_provider.dart';
@@ -299,7 +300,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
 
   Widget _buildCoverImage(RecipeModel recipe) {
     return SliverAppBar(
-      expandedHeight: 300,
+      expandedHeight: MediaQuery.of(context).size.width,
       pinned: true,
       backgroundColor: Colors.white,
       leading: IconButton(
@@ -353,47 +354,59 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
           fit: StackFit.expand,
           children: [
             if (recipe.coverImageUrl != null)
-              Image.network(
-                recipe.coverImageUrl!,
-                fit: BoxFit.cover,
-                loadingBuilder: (context, child, loadingProgress) {
-                  if (loadingProgress == null) return child;
-                  return Container(
-                    color: Colors.grey[200],
-                    child: Center(
-                      child: CircularProgressIndicator(
-                        value: loadingProgress.expectedTotalBytes != null
-                            ? loadingProgress.cumulativeBytesLoaded /
-                                loadingProgress.expectedTotalBytes!
-                            : null,
-                        color: AppColors.primary,
+              GestureDetector(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => ImageViewerScreen(
+                        imageUrl: recipe.coverImageUrl!,
                       ),
                     ),
                   );
                 },
-                errorBuilder: (context, error, stackTrace) {
-                  return Container(
-                    color: Colors.grey[300],
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.broken_image, 
-                          size: 64, 
-                          color: Colors.grey[500],
+                child: Image.network(
+                  recipe.coverImageUrl!,
+                  fit: BoxFit.cover,
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+                    return Container(
+                      color: Colors.grey[200],
+                      child: Center(
+                        child: CircularProgressIndicator(
+                          value: loadingProgress.expectedTotalBytes != null
+                              ? loadingProgress.cumulativeBytesLoaded /
+                                  loadingProgress.expectedTotalBytes!
+                              : null,
+                          color: AppColors.primary,
                         ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Image failed to load',
-                          style: TextStyle(
-                            color: Colors.grey[600], 
-                            fontSize: 14,
+                      ),
+                    );
+                  },
+                  errorBuilder: (context, error, stackTrace) {
+                    return Container(
+                      color: Colors.grey[300],
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.broken_image, 
+                            size: 64, 
+                            color: Colors.grey[500],
                           ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
+                          const SizedBox(height: 8),
+                          Text(
+                            'Image failed to load',
+                            style: TextStyle(
+                              color: Colors.grey[600], 
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
               )
             else
               Container(
@@ -749,55 +762,67 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                       // Step Image
                       if (step.imageUrl != null) ...[
                         const SizedBox(height: 12),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: Image.network(
-                            step.imageUrl!,
-                            width: double.infinity,
-                            height: 300,
-                            fit: BoxFit.cover,
-                            loadingBuilder: (context, child, loadingProgress) {
-                              if (loadingProgress == null) return child;
-                              return Container(
-                                height: 300,
-                                color: Colors.grey[200],
-                                child: Center(
-                                  child: CircularProgressIndicator(
-                                    value: loadingProgress.expectedTotalBytes != null
-                                        ? loadingProgress.cumulativeBytesLoaded /
-                                            loadingProgress.expectedTotalBytes!
-                                        : null,
-                                    color: AppColors.primary,
+                        AspectRatio(
+                          aspectRatio:  4/3,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: GestureDetector(
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => ImageViewerScreen(
+                                      imageUrl: step.imageUrl!,
+                                    ),
                                   ),
-                                ),
-                              );
-                            },
-                            errorBuilder: (context, error, stackTrace) {
-                              return Container(
-                                height: 300,
-                                color: Colors.grey[300],
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      Icons.broken_image, 
-                                      size: 48, 
-                                      color: Colors.grey[500],
-                                      ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      'Image unavailable',
-                                      style: TextStyle(
-                                        color: Colors.grey[600], 
-                                        fontSize: 12,
+                                );
+                              },
+                              child: Image.network(
+                                step.imageUrl!,
+                                fit: BoxFit.cover,
+                                loadingBuilder: (context, child, loadingProgress) {
+                                  if (loadingProgress == null) return child;
+                                  return Container(
+                                    color: Colors.grey[200],
+                                    child: Center(
+                                      child: CircularProgressIndicator(
+                                        value: loadingProgress.expectedTotalBytes != null
+                                            ? loadingProgress.cumulativeBytesLoaded /
+                                                loadingProgress.expectedTotalBytes!
+                                            : null,
+                                        color: AppColors.primary,
                                       ),
                                     ),
-                                  ],
-                                ),
-                              );
-                            },
+                                  );
+                                },
+                                errorBuilder: (context, error, stackTrace) {
+                                  return Container(
+                                    color: Colors.grey[300],
+                                    child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(
+                                          Icons.broken_image, 
+                                          size: 48, 
+                                          color: Colors.grey[500],
+                                          ),
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          'Image unavailable',
+                                          style: TextStyle(
+                                            color: Colors.grey[600], 
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
                           ),
-                        ),
+                        )
+                        
                       ],
                       
                       // Step Timer
