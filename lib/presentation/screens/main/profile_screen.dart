@@ -3,11 +3,13 @@ import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import '../../providers/auth_provider.dart';
 import '../../providers/recipe_provider.dart';
+import '../../providers/interaction_provider.dart';
 import '../../widgets/recipes/recipe_cards.dart';
 import '../../widgets/recipes/recipe_options_bottom_sheet.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/models/recipe_model.dart';
 import 'recipes/recipe_detail_screen.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({Key? key}) : super(key: key);
@@ -23,6 +25,13 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    
+    // Add listener to tab controller
+    _tabController.addListener(() {
+      if (mounted) {
+        setState(() {});
+      }
+    });
     
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final user = FirebaseAuth.instance.currentUser;
@@ -52,10 +61,13 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
-        child: Consumer<RecipeProvider>(
-          builder: (context, recipeProvider, _) {
+        child: Consumer2<RecipeProvider, InteractionProvider>(
+          builder: (context, recipeProvider, interactionProvider, _) {
             final userRecipes = recipeProvider.recipes;
             final recipesCount = userRecipes.length;
+            
+            // Get liked recipe IDs
+            final likedRecipeIds = interactionProvider.likedRecipeIds.toList();
             
             final followingCount = 1274;
             final followersCount = 112;
@@ -172,7 +184,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                               child: GestureDetector(
                                 onTap: () {
                                   _tabController.animateTo(0);
-                                  setState(() {});
                                 },
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(vertical: 12),
@@ -205,7 +216,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                               child: GestureDetector(
                                 onTap: () {
                                   _tabController.animateTo(1);
-                                  setState(() {});
                                 },
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(vertical: 12),
@@ -246,7 +256,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   sliver: _tabController.index == 0
                       ? _buildRecipesGrid(userRecipes)
-                      : _buildLikedGrid(),
+                      : _buildLikedGrid(likedRecipeIds),
                 ),
               ],
             );
@@ -344,20 +354,116 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     );
   }
 
-  Widget _buildLikedGrid() {
-    return SliverFillRemaining(
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.favorite_border, size: 64, color: Colors.grey[400]),
-            const SizedBox(height: 16),
-            Text(
-              'No liked recipes yet',
-              style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-            ),
-          ],
+  Widget _buildLikedGrid(List<String> likedRecipeIds) {
+    if (likedRecipeIds.isEmpty) {
+      return SliverFillRemaining(
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.favorite_border, size: 64, color: Colors.grey[400]),
+              const SizedBox(height: 16),
+              Text(
+                'No liked recipes yet',
+                style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Recipes you like will appear here',
+                style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+              ),
+            ],
+          ),
         ),
+      );
+    }
+
+    // Fetch recipes by IDs using FutureBuilder
+    return SliverGrid(
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        childAspectRatio: 0.75,
+        crossAxisSpacing: 16,
+        mainAxisSpacing: 16,
+      ),
+      delegate: SliverChildBuilderDelegate(
+        (context, index) {
+          final recipeId = likedRecipeIds[index];
+          
+          return FutureBuilder<DocumentSnapshot>(
+            future: FirebaseFirestore.instance
+                .collection('recipes')
+                .doc(recipeId)
+                .get(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return Container(
+                  decoration: BoxDecoration(
+                    color: Colors.grey[200],
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Center(
+                    child: CircularProgressIndicator(
+                      color: AppColors.primary,
+                      strokeWidth: 2,
+                    ),
+                  ),
+                );
+              }
+
+              if (!snapshot.hasData || !snapshot.data!.exists) {
+                return Container(
+                  decoration: BoxDecoration(
+                    color: Colors.grey[200],
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Center(
+                    child: Icon(
+                      Icons.error_outline,
+                      color: Colors.grey[400],
+                      size: 32,
+                    ),
+                  ),
+                );
+              }
+
+              try {
+                final recipe = RecipeModel.fromFirestore(snapshot.data!);
+                return RecipeCard(
+                  recipe: recipe,
+                  showMoreButton: false,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => RecipeDetailScreen(
+                          recipeId: recipe.id,
+                          hideAuthor: false,
+                        ),
+                      ),
+                    );
+                  },
+                  showOnlyOwnerRecipes: false,
+                );
+              } catch (e) {
+                return Container(
+                  decoration: BoxDecoration(
+                    color: Colors.grey[200],
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Center(
+                    child: Icon(
+                      Icons.error_outline,
+                      color: Colors.grey[400],
+                      size: 32,
+                    ),
+                  ),
+                );
+              }
+            },
+          );
+        },
+        childCount: likedRecipeIds.length,
       ),
     );
   }
