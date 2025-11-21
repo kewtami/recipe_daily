@@ -12,6 +12,7 @@ class RecipeCard extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback? onMoreTap;
   final bool showMoreButton;
+  final bool showOnlyOwnerRecipes; 
 
   const RecipeCard({
     Key? key,
@@ -19,11 +20,17 @@ class RecipeCard extends StatelessWidget {
     required this.onTap,
     this.onMoreTap,
     this.showMoreButton = false,
+    this.showOnlyOwnerRecipes = false,
   }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
+
+    // If only showing owner's recipes, and this recipe is not by the user, return empty
+    if (showOnlyOwnerRecipes && recipe.authorId != user?.uid) {
+    return const SizedBox.shrink();
+  }
 
     return GestureDetector(
       onTap: onTap,
