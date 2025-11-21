@@ -330,6 +330,8 @@ class _CollectionDetailScreenState extends State<CollectionDetailScreen> {
                             MaterialPageRoute(
                               builder: (context) => RecipeDetailScreen(
                                 recipeId: _recipes[index].id,
+                                hideAuthor: _recipes[index].authorId ==
+                                    FirebaseAuth.instance.currentUser?.uid,
                               ),
                             ),
                           );

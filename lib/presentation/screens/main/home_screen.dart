@@ -345,7 +345,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => RecipeDetailScreen(recipeId: recipes[index].id),
+                      builder: (context) => RecipeDetailScreen(
+                        recipeId: recipes[index].id,
+                        hideAuthor: recipes[index].authorId == FirebaseAuth.instance.currentUser?.uid,
+                      ),
                     ),
                   );
                 },
@@ -454,7 +457,10 @@ class _HomeScreenState extends State<HomeScreen> {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => RecipeDetailScreen(recipeId: recipe.id),
+                  builder: (context) => RecipeDetailScreen(
+                    recipeId: recipe.id,
+                    hideAuthor: recipe.authorId == FirebaseAuth.instance.currentUser?.uid,
+                  ),
                 ),
               );
             },
@@ -482,7 +488,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => RecipeDetailScreen(recipeId: recipes[index].id),
+                      builder: (context) => RecipeDetailScreen(
+                        recipeId: recipes[index].id,
+                        hideAuthor: recipes[index].authorId == FirebaseAuth.instance.currentUser?.uid,
+                      ),
                     ),
                   );
                 },
@@ -512,7 +521,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => RecipeDetailScreen(recipeId: recipes[index].id),
+                      builder: (context) => RecipeDetailScreen(
+                        recipeId: recipes[index].id,
+                        hideAuthor: recipes[index].authorId == FirebaseAuth.instance.currentUser?.uid,
+                      ),
                     ),
                   );
                 },

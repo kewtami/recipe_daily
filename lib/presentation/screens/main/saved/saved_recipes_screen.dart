@@ -340,6 +340,8 @@ class _SavedRecipesScreenState extends State<SavedRecipesScreen> {
                       MaterialPageRoute(
                         builder: (context) => RecipeDetailScreen(
                           recipeId: recipes[index].id,
+                          hideAuthor: recipes[index].authorId ==
+                              FirebaseAuth.instance.currentUser?.uid,
                         ),
                       ),
                     );
