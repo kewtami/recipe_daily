@@ -36,12 +36,8 @@ class _HomeScreenState extends State<HomeScreen> {
       final user = FirebaseAuth.instance.currentUser;
       
       // Load recipes
-      if (recipeProvider.recipes.isEmpty) {
-        print('Loading recipes from Firebase...');
-        recipeProvider.subscribeToRecipes();
-      } else {
-        print('Using cached recipes (${recipeProvider.recipes.length} items)');
-      }
+      print('Loading recipes from Firebase...');
+      recipeProvider.subscribeToRecipes();
       
       // Subscribe to user interactions
       if (user != null) {
@@ -141,7 +137,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
-                  color: Color(0xFF1E3A8A),
+                  color: AppColors.secondary,
                   height: 1.2,
                 ),
               );
@@ -201,7 +197,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               color: Colors.grey[300],
                               shape: BoxShape.circle,
                             ),
-                            child: const Icon(Icons.close, size: 16, color: Colors.black),
+                            child: const Icon(Icons.close, size: 16, color: AppColors.secondary),
                           ),
                           onPressed: () {
                             setState(() {
@@ -274,7 +270,7 @@ class _HomeScreenState extends State<HomeScreen> {
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
-                color: Color(0xFF1E3A8A),
+                color: AppColors.secondary,
               ),
             ),
             const SizedBox(height: 12),
@@ -299,7 +295,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           suggestion,
                           style: const TextStyle(
                             fontSize: 16,
-                            color: Color(0xFF1E3A8A),
+                            color: AppColors.secondary,
                           ),
                         ),
                       ),
@@ -573,7 +569,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   style: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
-                    color: Color(0xFF1E3A8A),
+                    color: AppColors.secondary,
                   ),
                   maxLines: 2,
                 ),
@@ -616,7 +612,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
-                        color: Color(0xFF1E3A8A),
+                        color:  AppColors.secondary,
                       ),
                     ),
                     const Spacer(),
@@ -654,7 +650,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
-                          color: Color(0xFF1E3A8A),
+                          color: AppColors.secondary,
                         ),
                       ),
                       const SizedBox(height: 12),
