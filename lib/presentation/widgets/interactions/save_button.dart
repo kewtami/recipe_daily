@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../providers/interaction_provider.dart';
 import '../../providers/collection_provider.dart';
 import '../../../core/constants/app_colors.dart';
@@ -49,14 +50,14 @@ class SaveButton extends StatelessWidget {
           onTap: () async {
             if (isSaved) {
               // If already saved, just unsave directly
-              _handleUnsave(context, user.uid);
+              _handleUnsave(context, user);
             } else {
               // If not saved, show collection selector to save
-              _showCollectionSelector(context, user.uid);
+              _showCollectionSelector(context, user);
             }
           },
           onLongPress: isSaved
-              ? () => _showCollectionSelector(context, user.uid)
+              ? () => _showCollectionSelector(context, user)
               : null,
           child: Padding(
             padding: padding ?? EdgeInsets.zero,
@@ -67,13 +68,35 @@ class SaveButton extends StatelessWidget {
     );
   }
 
-  Future<void> _handleUnsave(BuildContext context, String userId) async {
+  Future<void> _handleUnsave(BuildContext context, User user) async {
     try {
+      // Get user info from Firestore
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+      
+      final userData = userDoc.data();
+      final userName = userData?['name'] as String? ?? 
+                       userData?['displayName'] as String? ?? 
+                       user.displayName ?? 
+                       'Anonymous User';
+      final userPhotoUrl = userData?['photoUrl'] as String? ?? 
+                          userData?['profileImageUrl'] as String? ?? 
+                          user.photoURL;
+
       final provider = Provider.of<InteractionProvider>(
         context,
         listen: false,
       );
-      await provider.toggleSave(recipeId, userId);
+      
+      // Pass user info to toggleSave
+      await provider.toggleSave(
+        recipeId, 
+        user.uid,
+        userName: userName,
+        userPhotoUrl: userPhotoUrl,
+      );
       
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -109,7 +132,7 @@ class SaveButton extends StatelessWidget {
     }
   }
 
-  void _showCollectionSelector(BuildContext context, String userId) {
+  void _showCollectionSelector(BuildContext context, User user) {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -118,7 +141,7 @@ class SaveButton extends StatelessWidget {
       isScrollControlled: true,
       builder: (context) => _CollectionSelectorSheet(
         recipeId: recipeId,
-        userId: userId,
+        user: user,
       ),
     );
   }
@@ -126,11 +149,11 @@ class SaveButton extends StatelessWidget {
 
 class _CollectionSelectorSheet extends StatefulWidget {
   final String recipeId;
-  final String userId;
+  final User user;
 
   const _CollectionSelectorSheet({
     required this.recipeId,
-    required this.userId,
+    required this.user,
   });
 
   @override
@@ -141,11 +164,43 @@ class _CollectionSelectorSheet extends StatefulWidget {
 class _CollectionSelectorSheetState extends State<_CollectionSelectorSheet> {
   final Set<String> _selectedCollections = {};
   bool _isSaving = false;
+  String? _userName;
+  String? _userPhotoUrl;
 
   @override
   void initState() {
     super.initState();
+    _loadUserInfo();
     _loadCollections();
+  }
+
+  Future<void> _loadUserInfo() async {
+    try {
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.user.uid)
+          .get();
+      
+      if (userDoc.exists) {
+        final userData = userDoc.data();
+        setState(() {
+          _userName = userData?['name'] as String? ?? 
+                     userData?['displayName'] as String? ?? 
+                     widget.user.displayName ?? 
+                     'Anonymous User';
+          _userPhotoUrl = userData?['photoUrl'] as String? ?? 
+                         userData?['profileImageUrl'] as String? ?? 
+                         widget.user.photoURL;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading user info: $e');
+      // Fallback to Firebase Auth data
+      setState(() {
+        _userName = widget.user.displayName ?? 'Anonymous User';
+        _userPhotoUrl = widget.user.photoURL;
+      });
+    }
   }
 
   Future<void> _loadCollections() async {
@@ -153,7 +208,7 @@ class _CollectionSelectorSheetState extends State<_CollectionSelectorSheet> {
       context,
       listen: false,
     );
-    await collectionProvider.loadCollections(widget.userId);
+    await collectionProvider.loadCollections(widget.user.uid);
     
     // Check which collections already contain this recipe
     for (var collection in collectionProvider.collections) {
@@ -345,7 +400,12 @@ class _CollectionSelectorSheetState extends State<_CollectionSelectorSheet> {
 
       // Ensure the recipe is marked as saved
       if (!interactionProvider.isRecipeSaved(widget.recipeId)) {
-        await interactionProvider.toggleSave(widget.recipeId, widget.userId);
+        await interactionProvider.toggleSave(
+          widget.recipeId, 
+          widget.user.uid,
+          userName: _userName ?? widget.user.displayName ?? 'Anonymous User',
+          userPhotoUrl: _userPhotoUrl ?? widget.user.photoURL,
+        );
       }
 
       // Get all collections
@@ -361,14 +421,14 @@ class _CollectionSelectorSheetState extends State<_CollectionSelectorSheet> {
         if (isSelected && !hasRecipe) {
           // Add to collection
           await collectionProvider.addRecipeToCollection(
-            widget.userId,
+            widget.user.uid,
             collectionId,
             widget.recipeId,
           );
         } else if (!isSelected && hasRecipe) {
           // Remove from collection
           await collectionProvider.removeRecipeFromCollection(
-            widget.userId,
+            widget.user.uid,
             collectionId,
             widget.recipeId,
           );
@@ -460,7 +520,7 @@ class _CollectionSelectorSheetState extends State<_CollectionSelectorSheet> {
                   parentContext,
                   listen: false,
                 );
-                await provider.createCollection(widget.userId, name);
+                await provider.createCollection(widget.user.uid, name);
 
                 if (context.mounted) {
                   Navigator.pop(context);
@@ -484,7 +544,7 @@ class _CollectionSelectorSheetState extends State<_CollectionSelectorSheet> {
                         isScrollControlled: true,
                         builder: (context) => _CollectionSelectorSheet(
                           recipeId: widget.recipeId,
-                          userId: widget.userId,
+                          user: widget.user,
                         ),
                       );
                     }
