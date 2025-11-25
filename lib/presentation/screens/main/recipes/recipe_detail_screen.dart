@@ -500,7 +500,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
         // Likes
         LikeButton(
           recipeId: recipe.id,
-          likesCount: recipe.likesCount,
+          initialLikesCount: recipe.likesCount,
           showCount: true,
           iconSize: 20,
         ),
