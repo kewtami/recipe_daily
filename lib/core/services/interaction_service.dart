@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
 import '../models/interaction_models.dart';
+import 'notification_service.dart';
 
 class InteractionService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -7,7 +9,12 @@ class InteractionService {
   // ==================== LIKES ====================
   
   // Toggle like on a recipe
-  Future<void> toggleLike(String recipeId, String userId) async {
+  Future<void> toggleLike(
+    String recipeId, 
+    String userId, {
+    String? userName,
+    String? userPhotoUrl,
+  }) async {
     final likeQuery = await _firestore
         .collection('likes')
         .where('recipeId', isEqualTo: recipeId)
@@ -24,17 +31,53 @@ class InteractionService {
       });
 
       // Increment likes count
-      await _firestore.collection('recipes').doc(recipeId).update({
-        'likesCount': FieldValue.increment(1),
-      });
+      final recipeRef = _firestore.collection('recipes').doc(recipeId);
+      final recipeDoc = await recipeRef.get();
+      
+      if (recipeDoc.exists) {
+        final currentCount = (recipeDoc.data()?['likesCount'] as int?) ?? 0;
+        await recipeRef.update({
+          'likesCount': currentCount + 1,
+        });
+      }
+
+      // Create notification
+      try {
+        if (recipeDoc.exists) {
+          final data = recipeDoc.data();
+          final recipeOwnerId = data?['authorId'] as String?;
+          final recipeImage = data?['coverImageUrl'] as String?;
+          
+          if (recipeOwnerId != null && recipeOwnerId != userId) {
+            await NotificationService.createLikeNotification(
+              recipeId: recipeId,
+              recipeOwnerId: recipeOwnerId,
+              likerUserId: userId,
+              likerUserName: userName ?? 'Someone',
+              likerUserPhoto: userPhotoUrl,
+              recipeImage: recipeImage,
+            );
+          }
+        }
+      } catch (_) {}
     } else {
       // Remove like
-      await _firestore.collection('likes').doc(likeQuery.docs.first.id).delete();
+      await _firestore
+          .collection('likes')
+          .doc(likeQuery.docs.first.id)
+          .delete();
 
       // Decrement likes count
-      await _firestore.collection('recipes').doc(recipeId).update({
-        'likesCount': FieldValue.increment(-1),
-      });
+      final recipeRef = _firestore.collection('recipes').doc(recipeId);
+      final recipeDoc = await recipeRef.get();
+      
+      if (recipeDoc.exists) {
+        final currentCount = (recipeDoc.data()?['likesCount'] as int?) ?? 0;
+        final newCount = currentCount > 0 ? currentCount - 1 : 0;
+        await recipeRef.update({
+          'likesCount': newCount,
+        });
+      }
     }
   }
 
@@ -76,8 +119,13 @@ class InteractionService {
   
   // ==================== SAVED RECIPES ====================
 
-  // Toggle save on a recipe 
-  Future<void> toggleSave(String recipeId, String userId) async {
+  // Toggle save on a recipe
+  Future<void> toggleSave(
+    String recipeId, 
+    String userId, {
+    String? userName,
+    String? userPhotoUrl,
+  }) async {
     final userSaveRef = _firestore
         .collection('users')
         .doc(userId)
@@ -174,6 +222,27 @@ class InteractionService {
       'updatedAt': null,
     });
 
+    try {
+      final recipeDoc = await _firestore.collection('recipes').doc(recipeId).get();
+      if (recipeDoc.exists) {
+        final data = recipeDoc.data();
+        final recipeOwnerId = data?['authorId'] as String?;
+        final recipeImage = data?['coverImageUrl'] as String?;
+        
+        if (recipeOwnerId != null && recipeOwnerId != userId) {
+          await NotificationService.createCommentNotification(
+            recipeId: recipeId,
+            recipeOwnerId: recipeOwnerId,
+            commenterUserId: userId,
+            commenterUserName: userName,
+            commenterUserPhoto: userPhotoUrl,
+            recipeImage: recipeImage,
+            commentText: text,
+          );
+        }
+      }
+    } catch (_) {}
+
     return docRef.id;
   }
 
@@ -198,8 +267,8 @@ class InteractionService {
         .orderBy('createdAt', descending: false)
         .snapshots()
         .map((snapshot) => snapshot.docs
-            .map((doc) => RecipeComment.fromFirestore(doc))
-            .toList());
+          .map((doc) => RecipeComment.fromFirestore(doc))
+          .toList());
   }
 
   // Get comment count for a recipe
