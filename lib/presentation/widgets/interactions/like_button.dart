@@ -4,9 +4,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../providers/interaction_provider.dart';
 import '../../../core/constants/app_colors.dart';
 
-class LikeButton extends StatelessWidget {
+class LikeButton extends StatefulWidget {
   final String recipeId;
-  final int likesCount;
+  final int initialLikesCount; // Initial count from recipe data
   final bool showCount;
   final double iconSize;
   final EdgeInsets? padding;
@@ -15,12 +15,29 @@ class LikeButton extends StatelessWidget {
   const LikeButton({
     Key? key,
     required this.recipeId,
-    required this.likesCount,
+    required this.initialLikesCount,
     this.showCount = true,
     this.iconSize = 20,
     this.padding,
     this.onLikeChanged,
   }) : super(key: key);
+
+  @override
+  State<LikeButton> createState() => _LikeButtonState();
+}
+
+class _LikeButtonState extends State<LikeButton> {
+  @override
+  void initState() {
+    super.initState();
+    // Subscribe to real-time likes count from Firestore
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        final provider = Provider.of<InteractionProvider>(context, listen: false);
+        provider.subscribeToRecipeLikes(widget.recipeId);
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -29,15 +46,26 @@ class LikeButton extends StatelessWidget {
 
     return Consumer<InteractionProvider>(
       builder: (context, provider, _) {
-        final isLiked = provider.isRecipeLiked(recipeId);
+        // Check if the user has liked the recipe
+        final isLiked = provider.isRecipeLiked(widget.recipeId);
+        
         // Get updated likes count
-        final displayCount = provider.getLikesCount(recipeId, likesCount);
+        final displayCount = provider.getLikesCount(
+          widget.recipeId,
+          widget.initialLikesCount, // Fallback to initial count
+        );
 
         return GestureDetector(
           onTap: () async {
             try {
-              await provider.toggleLike(recipeId, user.uid);
-              onLikeChanged?.call();
+              await provider.toggleLike(
+                widget.recipeId,
+                user.uid,
+                userName: user.displayName ?? 'User',
+                userPhotoUrl: user.photoURL,
+              );
+              
+              widget.onLikeChanged?.call();
               
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -61,37 +89,37 @@ class LikeButton extends StatelessWidget {
             } catch (e) {
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
+                  const SnackBar(
                     content: Row(
-                      children: const [
+                      children: [
                         Icon(Icons.error_outline, color: Colors.white, size: 20),
                         SizedBox(width: 12),
                         Text('Failed to update like'),
                       ],
                     ),
                     backgroundColor: AppColors.error,
-                    duration: const Duration(seconds: 2),
+                    duration: Duration(seconds: 2),
                   ),
                 );
               }
             }
           },
           child: Padding(
-            padding: padding ?? EdgeInsets.zero,
+            padding: widget.padding ?? EdgeInsets.zero,
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
                   isLiked ? Icons.favorite : Icons.favorite_border,
                   color: isLiked ? Colors.red : AppColors.primary,
-                  size: iconSize,
+                  size: widget.iconSize,
                 ),
-                if (showCount) ...[
+                if (widget.showCount) ...[
                   const SizedBox(width: 4),
                   Text(
                     '$displayCount',
                     style: TextStyle(
-                      fontSize: iconSize * 0.7,
+                      fontSize: widget.iconSize * 0.7,
                       color: AppColors.primary,
                       fontWeight: FontWeight.w600,
                     ),
