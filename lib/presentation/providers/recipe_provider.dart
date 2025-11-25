@@ -18,88 +18,96 @@ class RecipeProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get error => _error;
 
+  // Clear cache
+  void clearCache() {
+    _recipes = [];
+    _currentRecipe = null;
+    _error = null;
+    notifyListeners();
+  }
+
   // CREATE Recipe
   Future<bool> createRecipe({
-  required String title,
-  required String description,
-  required File coverImage,
-  required int serves,
-  required Duration cookTime,
-  required Difficulty difficulty,
-  required List<Ingredient> ingredients,
-  required List<RecipeStep> steps,
-  required List<String> tags,
-  required int totalCalories,
-}) async {
-  _isLoading = true;
-  _error = null;
-  notifyListeners();
+    required String title,
+    required String description,
+    required File coverImage,
+    required int serves,
+    required Duration cookTime,
+    required Difficulty difficulty,
+    required List<Ingredient> ingredients,
+    required List<RecipeStep> steps,
+    required List<String> tags,
+    required int totalCalories,
+  }) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
 
-  try {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) throw Exception('User not logged in');
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) throw Exception('User not logged in');
 
-    print('Uploading cover image...');
-    final coverImageUrl = await _recipeService.uploadImage(
-      coverImage,
-      'recipes/covers',
-    );
+      print('Uploading cover image...');
+      final coverImageUrl = await _recipeService.uploadImage(
+        coverImage,
+        'recipes/covers',
+      );
 
-    print('Uploading step images...');
-    final List<RecipeStep> stepsWithUrls = [];
-    
-    for (var step in steps) {
-      String? stepImageUrl;
-      if (step.imageFile != null) {
-        print('Uploading step ${step.stepNumber} image...');
-        stepImageUrl = await _recipeService.uploadImage(
-          step.imageFile!,
-          'recipes/steps',
-        );
-      }
+      print('Uploading step images...');
+      final List<RecipeStep> stepsWithUrls = [];
       
-      stepsWithUrls.add(RecipeStep(
-        stepNumber: step.stepNumber,
-        instruction: step.instruction,
-        imageUrl: stepImageUrl,
-        timer: step.timer,
-      ));
+      for (var step in steps) {
+        String? stepImageUrl;
+        if (step.imageFile != null) {
+          print('Uploading step ${step.stepNumber} image...');
+          stepImageUrl = await _recipeService.uploadImage(
+            step.imageFile!,
+            'recipes/steps',
+          );
+        }
+        
+        stepsWithUrls.add(RecipeStep(
+          stepNumber: step.stepNumber,
+          instruction: step.instruction,
+          imageUrl: stepImageUrl,
+          timer: step.timer,
+        ));
+      }
+
+      print('Creating recipe...');
+      final recipe = RecipeModel(
+        id: '',
+        title: title,
+        description: description,
+        coverImageUrl: coverImageUrl,
+        authorId: user.uid,
+        authorName: user.displayName ?? 'Anonymous',
+        authorPhotoUrl: user.photoURL,
+        serves: serves,
+        cookTime: cookTime,
+        difficulty: difficulty,
+        ingredients: ingredients,
+        steps: stepsWithUrls,
+        tags: tags,
+        totalCalories: totalCalories,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+
+      final recipeId = await _recipeService.createRecipe(recipe);
+      print('Recipe created: $recipeId');
+
+      _isLoading = false;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      print('Error: $e');
+      _error = e.toString();
+      _isLoading = false;
+      notifyListeners();
+      return false;
     }
-
-    print('Creating recipe...');
-    final recipe = RecipeModel(
-      id: '',
-      title: title,
-      description: description,
-      coverImageUrl: coverImageUrl,
-      authorId: user.uid,
-      authorName: user.displayName ?? 'Anonymous',
-      authorPhotoUrl: user.photoURL,
-      serves: serves,
-      cookTime: cookTime,
-      difficulty: difficulty,
-      ingredients: ingredients,
-      steps: stepsWithUrls,
-      tags: tags,
-      totalCalories: totalCalories,
-      createdAt: DateTime.now(),
-      updatedAt: DateTime.now(),
-    );
-
-    final recipeId = await _recipeService.createRecipe(recipe);
-    print('Recipe created: $recipeId');
-
-    _isLoading = false;
-    notifyListeners();
-    return true;
-  } catch (e) {
-    print('Error: $e');
-    _error = e.toString();
-    _isLoading = false;
-    notifyListeners();
-    return false;
   }
-}
 
   // READ Single Recipe
   Future<void> fetchRecipe(String recipeId) async {
