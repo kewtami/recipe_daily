@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:recipe_daily/core/constants/app_colors.dart';
 import '../../providers/interaction_provider.dart';
 import 'profile_screen.dart';
 import 'recipes/create_recipe_screen.dart';
@@ -59,7 +60,7 @@ class _MainScreenState extends State<MainScreen> {
           });
         },
         type: BottomNavigationBarType.fixed,
-        selectedItemColor: const Color(0xFFFF6B35),
+        selectedItemColor: AppColors.primary,
         unselectedItemColor: Colors.grey,
         items: const [
           BottomNavigationBarItem(
