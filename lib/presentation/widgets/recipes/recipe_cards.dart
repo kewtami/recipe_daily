@@ -290,7 +290,11 @@ class TrendingRecipeCard extends StatelessWidget {
                         return GestureDetector(
                           onTap: () async {
                             try {
-                              await provider.toggleLike(recipe.id, user.uid);
+                              await provider.toggleLike(
+                                recipe.id, 
+                                user.uid,
+                                userName: user.displayName ?? 'Unknown User',
+                                userPhotoUrl: user.photoURL,);
                               if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
