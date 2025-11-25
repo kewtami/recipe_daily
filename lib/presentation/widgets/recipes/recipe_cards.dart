@@ -131,7 +131,7 @@ class RecipeCard extends StatelessWidget {
             style: const TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w600,
-              color: Color(0xFF1E3A8A),
+              color: AppColors.secondary,
             ),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
