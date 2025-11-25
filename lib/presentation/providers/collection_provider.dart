@@ -6,13 +6,20 @@ class CollectionProvider with ChangeNotifier {
   
   List<Map<String, dynamic>> _collections = [];
   bool _isLoading = false;
+  String? _lastLoadedUserId; // Track last loaded user
 
   List<Map<String, dynamic>> get collections => _collections;
   bool get isLoading => _isLoading;
 
   // Load collections for a user
   Future<void> loadCollections(String userId) async {
+    // Skip if already loaded for this user
+    if (_lastLoadedUserId == userId && _collections.isNotEmpty) {
+      return;
+    }
+
     _isLoading = true;
+    _lastLoadedUserId = userId;
     notifyListeners();
 
     try {
@@ -117,5 +124,33 @@ class CollectionProvider with ChangeNotifier {
     });
 
     await loadCollections(userId);
+  }
+
+  // Check if recipe is in a collection
+  bool isRecipeInCollection(String collectionId, String recipeId) {
+    final collection = _collections.firstWhere(
+      (c) => c['id'] == collectionId,
+      orElse: () => {},
+    );
+    
+    final recipes = (collection['recipes'] as List?)?.cast<String>() ?? [];
+    return recipes.contains(recipeId);
+  }
+
+  // Get collections that contain a specific recipe
+  List<Map<String, dynamic>> getCollectionsWithRecipe(String recipeId) {
+    return _collections.where((collection) {
+      final recipes = (collection['recipes'] as List?)?.cast<String>() ?? [];
+      return recipes.contains(recipeId);
+    }).toList();
+  }
+
+  // Clear all collections from provider
+  void clearCollections() {
+    _collections.clear();
+    _isLoading = false;
+    _lastLoadedUserId = null;
+    notifyListeners();
+    debugPrint('[COLLECTION] Cache cleared');
   }
 }
