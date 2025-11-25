@@ -139,6 +139,27 @@ class InteractionService {
       await userSaveRef.set({
         'savedAt': FieldValue.serverTimestamp(),
       });
+
+      // Create notification
+      try {
+        final recipeDoc = await _firestore.collection('recipes').doc(recipeId).get();
+        if (recipeDoc.exists) {
+          final data = recipeDoc.data();
+          final recipeOwnerId = data?['authorId'] as String?;
+          final recipeImage = data?['coverImageUrl'] as String?;
+          
+          if (recipeOwnerId != null && recipeOwnerId != userId) {
+            await NotificationService.createSaveNotification(
+              recipeId: recipeId,
+              recipeOwnerId: recipeOwnerId,
+              saverUserId: userId,
+              saverUserName: userName ?? 'Someone',
+              saverUserPhoto: userPhotoUrl,
+              recipeImage: recipeImage,
+            );
+          }
+        }
+      } catch (_) {}
     } else {
       // Unsave
       await _unsaveRecipeCompletely(recipeId, userId);

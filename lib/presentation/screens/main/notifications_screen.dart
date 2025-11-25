@@ -313,6 +313,11 @@ class _NotificationItemState extends State<_NotificationItem> {
         iconColor = Colors.red;
         message = 'liked your recipe';
         break;
+      case 'save':
+        icon = Icons.bookmark;
+        iconColor = AppColors.primary;
+        message = 'saved your recipe';
+        break;
       case 'comment':
         icon = Icons.comment;
         iconColor = AppColors.primary;
@@ -326,7 +331,7 @@ class _NotificationItemState extends State<_NotificationItem> {
 
     return GestureDetector(
       onTap: () {
-        if (recipeId != null && (type == 'like' || type == 'comment')) {
+        if (recipeId != null && (type == 'like' || type == 'comment' || type == 'save')) {
           Navigator.push(
             context,
             MaterialPageRoute(

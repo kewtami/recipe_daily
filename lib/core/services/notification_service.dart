@@ -70,6 +70,38 @@ class NotificationService {
     }
   }
 
+  // Create notification when someone saves a recipe
+  static Future<void> createSaveNotification({
+    required String recipeId,
+    required String recipeOwnerId,
+    required String saverUserId,
+    required String saverUserName,
+    String? saverUserPhoto,
+    String? recipeImage,
+  }) async {
+    // Do not notify if user saves their own recipe
+    if (recipeOwnerId == saverUserId) return;
+
+    try {
+      await _firestore
+          .collection('users')
+          .doc(recipeOwnerId)
+          .collection('notifications')
+          .add({
+        'type': 'save',
+        'recipeId': recipeId,
+        'recipeImage': recipeImage,
+        'fromUserId': saverUserId,
+        'fromUserName': saverUserName,
+        'fromUserPhotoUrl': saverUserPhoto,
+        'read': false,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      debugPrint('Error creating save notification: $e');
+    }
+  }
+
   // Create notification when someone follows a user
   static Future<void> createFollowNotification({
     required String followedUserId,
