@@ -742,16 +742,16 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
         const SizedBox(width: 12),
         const Text(
           'Serves',
-          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w500),
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
         ),
         const Spacer(),
         SizedBox(
-          width: 120,
+          width: 100,
           child: TextFormField(
             controller: _servesController,
             keyboardType: TextInputType.number,
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
             decoration: InputDecoration(
               filled: true,
               fillColor: Colors.grey[100],
@@ -760,7 +760,8 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
                 borderSide: BorderSide.none,
               ),
               suffixText: 'people',
-              suffixStyle: TextStyle(fontSize: 14, color: Colors.grey[600]),
+              suffixStyle: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
             ),
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
             validator: (v) {
@@ -776,46 +777,61 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
   }
 
   Widget _buildCookTimeInput() {
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Icon(Icons.timer_outlined, size: 22),
-        const SizedBox(width: 12),
-        const Text(
-          'Cook Time',
-          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w500),
+        Row(
+          children: [
+            const Icon(Icons.timer_outlined, size: 22),
+            const SizedBox(width: 12),
+            const Text(
+              'Cook Time',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+            ),
+          ],
         ),
-        const Spacer(),
-        _buildTimeField(_hoursController, 'HH', 'hrs'),
-        const Text(' : ', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-        _buildTimeField(_minutesController, 'MM', 'min'),
-        const Text(' : ', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-        _buildTimeField(_secondsController, 'SS', 'sec'),
+        const SizedBox(height: 12),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _buildTimeField(_hoursController, 'HH', 'hrs'),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 4),
+              child: Text(':', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+            ),
+            _buildTimeField(_minutesController, 'MM', 'min'),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 4),
+              child: Text(':', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+            ),
+            _buildTimeField(_secondsController, 'SS', 'sec'),
+          ],
+        ),
       ],
     );
   }
 
   Widget _buildTimeField(TextEditingController controller, String hint, String suffix) {
-    return SizedBox(
-      width: 70,
+    return Expanded(
       child: TextFormField(
         controller: controller,
         keyboardType: TextInputType.number,
         textAlign: TextAlign.center,
         maxLength: 2,
-        style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
         decoration: InputDecoration(
           counterText: '',
           hintText: hint,
-          hintStyle: const TextStyle(fontSize: 17),
+          hintStyle: const TextStyle(fontSize: 14),
           suffixText: suffix,
-          suffixStyle: TextStyle(fontSize: 11, color: Colors.grey[600]),
+          suffixStyle: TextStyle(fontSize: 10, color: Colors.grey[600]),
           filled: true,
           fillColor: Colors.grey[100],
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
             borderSide: BorderSide.none,
           ),
-          contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+          contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
         ),
         inputFormatters: [
           FilteringTextInputFormatter.digitsOnly,
@@ -832,11 +848,11 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
         const SizedBox(width: 12),
         const Text(
           'Difficulty',
-          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w500),
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
         ),
         const Spacer(),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
             color: Colors.grey[100],
             borderRadius: BorderRadius.circular(8),
@@ -844,7 +860,11 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
           child: DropdownButton<Difficulty>(
             value: _difficulty,
             underline: const SizedBox(),
-            style: const TextStyle(fontSize: 17, color: Colors.black, fontWeight: FontWeight.w500),
+            style: const TextStyle(
+              fontSize: 15, 
+              color: Colors.black, 
+              fontWeight: FontWeight.w500
+            ),
             items: Difficulty.values.map((d) {
               return DropdownMenuItem(
                 value: d,
