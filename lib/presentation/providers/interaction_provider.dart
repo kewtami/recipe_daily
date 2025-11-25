@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'dart:async';
 import '../../core/services/interaction_service.dart';
 import '../../core/models/interaction_models.dart';
 
@@ -28,22 +29,56 @@ class InteractionProvider extends ChangeNotifier {
   bool get isTogglingSave => _isTogglingSave;
   bool get isAddingComment => _isAddingComment;
 
+  // Stream subscriptions
+  StreamSubscription? _likedRecipesSubscription;
+  StreamSubscription? _savedRecipesSubscription;
+  Map<String, StreamSubscription> _likesCountSubscriptions = {};
+  Map<String, StreamSubscription> _commentsSubscriptions = {};
+
+  // Current user ID
+  String? _currentUserId;
+  String? get currentUserId => _currentUserId;
+
   // ==================== LIKES ====================
 
   // Subscribe to user's liked recipes
   void subscribeToLikedRecipes(String userId) {
-    _service.getLikedRecipeIds(userId).listen((likedIds) {
-      _likedRecipeIds = Set.from(likedIds);
-      notifyListeners();
-    });
+    // Cancel previous subscription if exists
+    _likedRecipesSubscription?.cancel();
+    
+    // Clear cache if user changed
+    if (_currentUserId != userId) {
+      _likedRecipeIds.clear();
+      _currentUserId = userId;
+    }
+
+    _likedRecipesSubscription = _service.getLikedRecipeIds(userId).listen(
+      (likedIds) {
+        _likedRecipeIds = Set.from(likedIds);
+        notifyListeners();
+      },
+      onError: (error) {
+        // Handle error silently or log if needed
+      },
+    );
   }
 
   // Subscribe to recipe likes count
   void subscribeToRecipeLikes(String recipeId) {
-    _service.getRecipeLikesCount(recipeId).listen((count) {
-      _likesCountCache[recipeId] = count;
-      notifyListeners();
-    });
+    // Do not subscribe again if already subscribed
+    if (_likesCountSubscriptions.containsKey(recipeId)) {
+      return;
+    }
+
+    _likesCountSubscriptions[recipeId] = _service.getRecipeLikesCount(recipeId).listen(
+      (count) {
+        _likesCountCache[recipeId] = count;
+        notifyListeners();
+      },
+      onError: (error) {
+        // Handle error silently or log if needed
+      },
+    );
   }
 
   // Check if recipe is liked
@@ -57,8 +92,15 @@ class InteractionProvider extends ChangeNotifier {
   }
 
   // Toggle like on a recipe
-  Future<void> toggleLike(String recipeId, String userId) async {
-    if (_isTogglingLike) return;
+  Future<void> toggleLike(
+    String recipeId, 
+    String userId, {
+    String? userName,
+    String? userPhotoUrl,
+  }) async {
+    if (_isTogglingLike) {
+      return;
+    }
 
     _isTogglingLike = true;
     
@@ -66,30 +108,29 @@ class InteractionProvider extends ChangeNotifier {
       // Check current state before toggle
       final isCurrentlyLiked = _likedRecipeIds.contains(recipeId);
       
-      // Optimistic update
+      // Optimistic update for USER's like state (not count)
       if (isCurrentlyLiked) {
-        // Currently liked
         _likedRecipeIds.remove(recipeId);
-        _likesCountCache[recipeId] = (_likesCountCache[recipeId] ?? 1) - 1;
       } else {
-        // Currently not liked
         _likedRecipeIds.add(recipeId);
-        _likesCountCache[recipeId] = (_likesCountCache[recipeId] ?? 0) + 1;
       }
       notifyListeners();
 
-      // Actual update
-      await _service.toggleLike(recipeId, userId);
+      // Actual update - Firestore will update the count and stream will receive it
+      await _service.toggleLike(
+        recipeId, 
+        userId,
+        userName: userName,
+        userPhotoUrl: userPhotoUrl,
+      );
     } catch (e) {
       // Revert on error
-      final isCurrentlyLiked = !_likedRecipeIds.contains(recipeId); // Opposite of current state
+      final isCurrentlyLiked = !_likedRecipeIds.contains(recipeId);
       
       if (isCurrentlyLiked) {
         _likedRecipeIds.add(recipeId);
-        _likesCountCache[recipeId] = (_likesCountCache[recipeId] ?? 0) + 1;
       } else {
         _likedRecipeIds.remove(recipeId);
-        _likesCountCache[recipeId] = (_likesCountCache[recipeId] ?? 1) - 1;
       }
       notifyListeners();
       rethrow;
@@ -103,10 +144,23 @@ class InteractionProvider extends ChangeNotifier {
 
   // Subscribe to user's saved recipes
   void subscribeToSavedRecipes(String userId) {
-    _service.getSavedRecipeIds(userId).listen((savedIds) {
-      _savedRecipeIds = Set.from(savedIds);
-      notifyListeners();
-    });
+    // Cancel previous subscription if exists
+    _savedRecipesSubscription?.cancel();
+    
+    // Clear cache if user changed
+    if (_currentUserId != userId) {
+      _savedRecipeIds.clear();
+    }
+
+    _savedRecipesSubscription = _service.getSavedRecipeIds(userId).listen(
+      (savedIds) {
+        _savedRecipeIds = Set.from(savedIds);
+        notifyListeners();
+      },
+      onError: (error) {
+        // Handle error silently or log if needed
+      },
+    );
   }
 
   // Check if recipe is saved
@@ -115,7 +169,12 @@ class InteractionProvider extends ChangeNotifier {
   }
 
   // Toggle save on a recipe
-  Future<void> toggleSave(String recipeId, String userId) async {
+  Future<void> toggleSave(
+    String recipeId, 
+    String userId, {
+    String? userName,
+    String? userPhotoUrl,
+  }) async {
     if (_isTogglingSave) return;
 
     _isTogglingSave = true;
@@ -126,16 +185,19 @@ class InteractionProvider extends ChangeNotifier {
       
       // Optimistic update
       if (isCurrentlySaved) {
-        // Currently saved
         _savedRecipeIds.remove(recipeId);
       } else {
-        // Currently not saved
         _savedRecipeIds.add(recipeId);
       }
       notifyListeners();
 
-      // Actual update
-      await _service.toggleSave(recipeId, userId);
+      // Actual update with user info for notifications
+      await _service.toggleSave(
+        recipeId, 
+        userId,
+        userName: userName,
+        userPhotoUrl: userPhotoUrl,
+      );
     } catch (e) {
       // Revert on error
       final isCurrentlySaved = !_savedRecipeIds.contains(recipeId);
@@ -157,10 +219,18 @@ class InteractionProvider extends ChangeNotifier {
   
   // Subscribe to comments for a recipe
   void subscribeToComments(String recipeId) {
-    _service.getComments(recipeId).listen((comments) {
-      _commentsCache[recipeId] = comments;
-      notifyListeners();
-    });
+    // Do not subscribe again if already subscribed
+    if (_commentsSubscriptions.containsKey(recipeId)) return;
+
+    _commentsSubscriptions[recipeId] = _service.getComments(recipeId).listen(
+      (comments) {
+        _commentsCache[recipeId] = comments;
+        notifyListeners();
+      },
+      onError: (error) {
+        // Handle error silently or log if needed
+      },
+    );
   }
 
   // Get comments for a recipe
@@ -210,7 +280,7 @@ class InteractionProvider extends ChangeNotifier {
         text: text,
       );
       
-      // Stream auto update with real comment from backend
+      // Replace temp comment ID with actual ID
       return commentId;
     } catch (e) {
       // Revert optimistic update
@@ -280,12 +350,34 @@ class InteractionProvider extends ChangeNotifier {
     }
   }
 
-  // Clear cache
+  // Clear cache and cancel subscriptions
   void clearCache() {
     _likedRecipeIds.clear();
     _savedRecipeIds.clear();
     _commentsCache.clear();
     _likesCountCache.clear();
+    _currentUserId = null;
+    
+    // Cancel all subscriptions
+    _likedRecipesSubscription?.cancel();
+    _savedRecipesSubscription?.cancel();
+    
+    for (var subscription in _likesCountSubscriptions.values) {
+      subscription.cancel();
+    }
+    _likesCountSubscriptions.clear();
+    
+    for (var subscription in _commentsSubscriptions.values) {
+      subscription.cancel();
+    }
+    _commentsSubscriptions.clear();
+    
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    clearCache();
+    super.dispose();
   }
 }
