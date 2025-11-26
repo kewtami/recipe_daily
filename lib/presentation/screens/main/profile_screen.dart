@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
+import 'package:recipe_daily/presentation/providers/user_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/recipe_provider.dart';
 import '../../providers/interaction_provider.dart';
@@ -38,6 +39,10 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       if (user != null) {
         Provider.of<RecipeProvider>(context, listen: false)
             .subscribeToUserRecipes(user.uid);
+        Provider.of<UserProvider>(context, listen: false)
+            .subscribeToUserStats(user.uid);
+        Provider.of<UserProvider>(context, listen: false)
+            .loadUserProfile(user.uid);
       }
     });
   }
@@ -61,17 +66,15 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
-        child: Consumer2<RecipeProvider, InteractionProvider>(
-          builder: (context, recipeProvider, interactionProvider, _) {
+        child: Consumer3<RecipeProvider, InteractionProvider, UserProvider>(
+          builder: (context, recipeProvider, interactionProvider, userProvider, _) {
             final userRecipes = recipeProvider.recipes;
             final recipesCount = userRecipes.length;
+            final stats = userProvider.userStats;
+            final userProfile = userProvider.userProfile;
             
             // Get liked recipe IDs
             final likedRecipeIds = interactionProvider.likedRecipeIds.toList();
-            
-            final followingCount = 1274;
-            final followersCount = 112;
-            final likesCount = 30700;
             
             return CustomScrollView(
               slivers: [
@@ -149,10 +152,10 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceAround,
                           children: [
-                            _buildStatItem(recipesCount.toString(), 'Recipes'),
-                            _buildStatItem(_formatCount(followingCount), 'Following'),
-                            _buildStatItem(followersCount.toString(), 'Followers'),
-                            _buildStatItem(_formatCount(likesCount), 'Likes'),
+                            _buildStatItem(stats.recipesCount.toString(), 'Recipes'),
+                            _buildStatItem(_formatCount(stats.followingCount), 'Following'),
+                            _buildStatItem(stats.followersCount.toString(), 'Followers'),
+                            _buildStatItem(_formatCount(stats.likesCount), 'Likes'),
                           ],
                         ),
                       ),
