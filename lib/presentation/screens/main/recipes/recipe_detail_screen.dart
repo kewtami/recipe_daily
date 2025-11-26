@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:recipe_daily/presentation/screens/main/recipes/image_viewer_screen.dart';
+import 'package:recipe_daily/presentation/widgets/interactions/follow_button.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/models/recipe_model.dart';
 import '../../../providers/recipe_provider.dart';
@@ -938,50 +939,12 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
 
           SizedBox(
             width: double.infinity,
-            child: ElevatedButton(
-              onPressed: () {
-                setState(() {
-                  _isFollowing = !_isFollowing;
-                });
-                
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Row(
-                      children: [
-                        Icon(
-                          _isFollowing ? Icons.person_add : Icons.person_remove,
-                          color: Colors.white,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 12),
-                        Text(
-                          _isFollowing
-                              ? 'Now following ${recipe.authorName}'
-                              : 'Unfollowed ${recipe.authorName}',
-                        ),
-                      ],
-                    ),
-                    backgroundColor: _isFollowing ? AppColors.success : Colors.grey[700],
-                    duration: const Duration(seconds: 2),
-                  ),
-                );
+            child: FollowButton(
+              targetUserId: recipe.authorId,
+              targetUserName: recipe.authorName,
+              onFollowChanged: () {
+                setState(() {});
               },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _isFollowing ? Colors.grey[300] : AppColors.primary,
-                foregroundColor: _isFollowing ? AppColors.secondary : Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                elevation: 0,
-              ),
-              child: Text(
-                _isFollowing ? 'Following' : 'Follow',
-                style: const TextStyle(
-                  fontSize: 16, 
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
             ),
           ),
         ],
