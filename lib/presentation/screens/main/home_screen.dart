@@ -7,6 +7,7 @@ import '../../providers/recipe_provider.dart';
 import '../../providers/interaction_provider.dart';
 import '../../widgets/recipes/recipe_cards.dart';
 import 'recipes/recipe_detail_screen.dart';
+import 'recipes/search_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -16,16 +17,6 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final TextEditingController _searchController = TextEditingController();
-  final FocusNode _searchFocusNode = FocusNode();
-  bool _isSearching = false;
-  List<String> _searchHistory = ['Cupcake', 'Ice Cream'];
-  List<String> _searchSuggestions = ['Chocolate Cupcake', 'Ice Cream Sundae'];
-  
-  // Filter states
-  Difficulty? _selectedDifficulty;
-  List<String> _selectedTags = [];
-
   @override
   void initState() {
     super.initState();
@@ -34,6 +25,9 @@ class _HomeScreenState extends State<HomeScreen> {
       final recipeProvider = Provider.of<RecipeProvider>(context, listen: false);
       final interactionProvider = Provider.of<InteractionProvider>(context, listen: false);
       final user = FirebaseAuth.instance.currentUser;
+      
+      // Clear any lingering search state
+      recipeProvider.clearSearch();
       
       // Load recipes
       print('Loading recipes from Firebase...');
@@ -46,55 +40,6 @@ class _HomeScreenState extends State<HomeScreen> {
         interactionProvider.subscribeToSavedRecipes(user.uid);
       }
     });
-
-    _searchFocusNode.addListener(() {
-      setState(() {
-        _isSearching = _searchFocusNode.hasFocus;
-      });
-    });
-  }
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    _searchFocusNode.dispose();
-    super.dispose();
-  }
-
-  void _onSearchChanged(String query) {
-    setState(() {});
-    if (query.isNotEmpty) {
-      // Update suggestions based on query
-      _searchSuggestions = ['Cupcake', 'Cupcake matcha']
-          .where((s) => s.toLowerCase().contains(query.toLowerCase()))
-          .toList();
-    }
-  }
-
-  void _performSearch(String query) {
-    if (query.isEmpty) return;
-    
-    setState(() {
-      if (!_searchHistory.contains(query)) {
-        _searchHistory.insert(0, query);
-        if (_searchHistory.length > 5) {
-          _searchHistory.removeLast();
-        }
-      }
-      _isSearching = false;
-    });
-    
-    _searchFocusNode.unfocus();
-    Provider.of<RecipeProvider>(context, listen: false).searchRecipes(query);
-  }
-
-  void _showFilterModal() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => _buildFilterModal(),
-    );
   }
 
   @override
@@ -110,11 +55,9 @@ class _HomeScreenState extends State<HomeScreen> {
             // Search Bar
             _buildSearchBar(),
 
-            // Search Results or Main Content
+            // Main Content
             Expanded(
-              child: _isSearching || _searchController.text.isNotEmpty
-                  ? _buildSearchContent()
-                  : _buildMainContent(),
+              child: _buildMainContent(),
             ),
           ],
         ),
@@ -151,209 +94,48 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildSearchBar() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Row(
-        children: [
-          // Back Button
-          if (_isSearching || _searchController.text.isNotEmpty)
-            IconButton(
-              icon: const Icon(Icons.arrow_back, color: AppColors.primary),
-              onPressed: () {
-                setState(() {
-                  _searchController.clear();
-                  _isSearching = false;
-                });
-                _searchFocusNode.unfocus();
-              },
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
+      child: GestureDetector(
+        onTap: () async {
+          // Navigate to search screen
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const SearchScreen(),
             ),
+          );
           
-          if (_isSearching || _searchController.text.isNotEmpty)
-            const SizedBox(width: 8),
-          
-          // Search Field
-          Expanded(
-            child: Container(
-              height: 50,
-              decoration: BoxDecoration(
-                border: Border.all(color: AppColors.primary, width: 2),
-                borderRadius: BorderRadius.circular(25),
-              ),
-              child: TextField(
-                controller: _searchController,
-                focusNode: _searchFocusNode,
-                onChanged: _onSearchChanged,
-                onSubmitted: _performSearch,
-                style: const TextStyle(fontSize: 16),
-                decoration: InputDecoration(
-                  hintText: _isSearching ? '' : 'Search recipes',
-                  hintStyle: TextStyle(color: Colors.grey[400], fontSize: 16),
-                  prefixIcon: const Icon(Icons.search, color: AppColors.primary),
-                  suffixIcon: _searchController.text.isNotEmpty
-                      ? IconButton(
-                          icon: Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: BoxDecoration(
-                              color: Colors.grey[300],
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(Icons.close, size: 16, color: AppColors.secondary),
-                          ),
-                          onPressed: () {
-                            setState(() {
-                              _searchController.clear();
-                            });
-                          },
-                        )
-                      : null,
-                  border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-              ),
-            ),
+          // Clear search state when returning
+          if (mounted) {
+            final provider = Provider.of<RecipeProvider>(context, listen: false);
+            provider.clearSearch();
+          }
+        },
+        child: Container(
+          height: 50,
+          decoration: BoxDecoration(
+            border: Border.all(color: AppColors.primary, width: 2),
+            borderRadius: BorderRadius.circular(25),
           ),
-          
-          // Filter button
-          if (!_isSearching && _searchController.text.isEmpty)
-            const SizedBox(width: 12),
-          
-          if (!_isSearching && _searchController.text.isEmpty)
-            IconButton(
-              icon: Icon(
-                Icons.tune,
-                color: _selectedDifficulty != null || _selectedTags.isNotEmpty
-                    ? AppColors.primary
-                    : Colors.grey[600],
+          child: Row(
+            children: [
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16),
+                child: Icon(Icons.search, color: AppColors.primary),
               ),
-              onPressed: _showFilterModal,
-            ),
-          
-          // Filter button during search with active filters
-          if (_searchController.text.isNotEmpty && (_selectedDifficulty != null || _selectedTags.isNotEmpty))
-            IconButton(
-              icon: const Icon(Icons.filter_list, color: AppColors.primary),
-              onPressed: _showFilterModal,
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSearchContent() {
-    if (_searchController.text.isEmpty) {
-      // Show search history and suggestions
-      return SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Search History
-            if (_searchHistory.isNotEmpty) ...[
-              ..._searchHistory.map((query) {
-                return ListTile(
-                  leading: const Icon(Icons.history, color: Colors.grey),
-                  title: Text(query, style: const TextStyle(fontSize: 16)),
-                  contentPadding: EdgeInsets.zero,
-                  onTap: () {
-                    _searchController.text = query;
-                    _performSearch(query);
-                  },
-                );
-              }).toList(),
-              
-              const SizedBox(height: 24),
-            ],
-            
-            // Search Suggestions
-            const Text(
-              'Suggestions',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: AppColors.secondary,
-              ),
-            ),
-            const SizedBox(height: 12),
-            
-            ..._searchSuggestions.map((suggestion) {
-              return Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  color: Colors.grey[100],
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: InkWell(
-                  onTap: () {
-                    _searchController.text = suggestion;
-                    _performSearch(suggestion);
-                  },
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          suggestion,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            color: AppColors.secondary,
-                          ),
-                        ),
-                      ),
-                    ],
+              Expanded(
+                child: Text(
+                  'Search recipes...',
+                  style: TextStyle(
+                    color: Colors.grey[400],
+                    fontSize: 16,
                   ),
                 ),
-              );
-            }).toList(),
-          ],
+              ),
+            ],
+          ),
         ),
-      );
-    } else {
-      // Show search results
-      return Consumer<RecipeProvider>(
-        builder: (context, provider, _) {
-          if (provider.isLoading) {
-            return const Center(
-              child: CircularProgressIndicator(color: AppColors.primary),
-            );
-          }
-
-          final recipes = provider.recipes;
-          
-          if (recipes.isEmpty) {
-            return const Center(
-              child: Text('No recipes found'),
-            );
-          }
-
-          return GridView.builder(
-            padding: const EdgeInsets.all(20),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              childAspectRatio: 0.75,
-              crossAxisSpacing: 16,
-              mainAxisSpacing: 16,
-            ),
-            itemCount: recipes.length,
-            itemBuilder: (context, index) {
-              return RecipeCard(
-                recipe: recipes[index],
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => RecipeDetailScreen(
-                        recipeId: recipes[index].id,
-                        hideAuthor: recipes[index].authorId == FirebaseAuth.instance.currentUser?.uid,
-                      ),
-                    ),
-                  );
-                },
-              );
-            },
-          );
-        },
-      );
-    }
+      ),
+    );
   }
 
   Widget _buildMainContent() {
@@ -578,148 +360,6 @@ class _HomeScreenState extends State<HomeScreen> {
           );
         },
       ),
-    );
-  }
-
-  Widget _buildFilterModal() {
-    Difficulty? tempDifficulty = _selectedDifficulty;
-    List<String> tempTags = List.from(_selectedTags);
-
-    return StatefulBuilder(
-      builder: (context, setModalState) {
-        return Container(
-          height: MediaQuery.of(context).size.height * 0.7,
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: Column(
-            children: [
-              //Header
-              Padding(
-                padding: const EdgeInsets.all(20),
-                child: Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.arrow_back),
-                      onPressed: () => Navigator.pop(context),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                    ),
-                    const Spacer(),
-                    const Text(
-                      'Filter',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color:  AppColors.secondary,
-                      ),
-                    ),
-                    const Spacer(),
-                    TextButton(
-                      onPressed: () {
-                        setModalState(() {
-                          tempDifficulty = null;
-                          tempTags.clear();
-                        });
-                      },
-                      child: const Text(
-                        'Reset',
-                        style: TextStyle(
-                          color: AppColors.primary,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              
-              const Divider(height: 1),
-              
-              // Filter Content
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Difficulty
-                      const Text(
-                        'Difficulty',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.secondary,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      
-                      Row(
-                        children: Difficulty.values.map((difficulty) {
-                          final isSelected = tempDifficulty == difficulty;
-                          return Padding(
-                            padding: const EdgeInsets.only(right: 12),
-                            child: ChoiceChip(
-                              label: Text(difficulty.displayName),
-                              selected: isSelected,
-                              onSelected: (selected) {
-                                setModalState(() {
-                                  tempDifficulty = selected ? difficulty : null;
-                                });
-                              },
-                              selectedColor: AppColors.primary,
-                              backgroundColor: Colors.white,
-                              labelStyle: TextStyle(
-                                color: isSelected ? Colors.white : AppColors.primary,
-                                fontWeight: FontWeight.w600,
-                              ),
-                              side: const BorderSide(color: AppColors.primary),
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              
-              // Apply Button
-              Padding(
-                padding: const EdgeInsets.all(20),
-                child: SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      setState(() {
-                        _selectedDifficulty = tempDifficulty;
-                        _selectedTags = tempTags;
-                      });
-                      Navigator.pop(context);
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      elevation: 0,
-                    ),
-                    child: const Text(
-                      'Apply',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
     );
   }
 }
