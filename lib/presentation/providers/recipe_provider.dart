@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:async';
 import 'dart:io';
 import '../../core/models/recipe_model.dart';
 import '../../core/services/recipe_service.dart';
@@ -8,12 +9,30 @@ class RecipeProvider with ChangeNotifier {
   final RecipeService _recipeService = RecipeService();
   
   List<RecipeModel> _recipes = [];
+  List<RecipeModel> _filteredRecipes = [];
   RecipeModel? _currentRecipe;
   bool _isLoading = false;
   String? _error;
+  StreamSubscription? _recipesSubscription;
+  
+  // Search and filter state
+  String _currentSearchQuery = '';
+  Difficulty? _currentDifficulty;
+  String? _currentCategory;
 
   // Getters
-  List<RecipeModel> get recipes => _recipes;
+  List<RecipeModel> get recipes {
+    // If no search/filter, return all recipes
+    if (_currentSearchQuery.isEmpty && _currentDifficulty == null && _currentCategory == null) {
+      return _recipes;
+    }
+    // Otherwise, return filtered recipes
+    return _filteredRecipes;
+  }
+  
+  // Get original recipes list
+  List<RecipeModel> get allRecipes => _recipes;
+  
   RecipeModel? get currentRecipe => _currentRecipe;
   bool get isLoading => _isLoading;
   String? get error => _error;
@@ -21,8 +40,13 @@ class RecipeProvider with ChangeNotifier {
   // Clear cache
   void clearCache() {
     _recipes = [];
+    _filteredRecipes = [];
     _currentRecipe = null;
+    _currentSearchQuery = '';
+    _currentDifficulty = null;
+    _currentCategory = null;
     _error = null;
+    _recipesSubscription?.cancel();
     notifyListeners();
   }
 
@@ -34,6 +58,7 @@ class RecipeProvider with ChangeNotifier {
     required int serves,
     required Duration cookTime,
     required Difficulty difficulty,
+    String category = 'Other',
     required List<Ingredient> ingredients,
     required List<RecipeStep> steps,
     required List<String> tags,
@@ -86,6 +111,7 @@ class RecipeProvider with ChangeNotifier {
         serves: serves,
         cookTime: cookTime,
         difficulty: difficulty,
+        category: category,
         ingredients: ingredients,
         steps: stepsWithUrls,
         tags: tags,
@@ -128,24 +154,51 @@ class RecipeProvider with ChangeNotifier {
 
   // READ All Recipes
   void subscribeToRecipes() {
-    _recipeService.getRecipes().listen((recipes) {
-      _recipes = recipes;
-      notifyListeners();
-    }, onError: (error) {
-      _error = error.toString();
-      notifyListeners();
-    });
+    _isLoading = true;
+    notifyListeners();
+
+    _recipesSubscription?.cancel();
+    _recipesSubscription = _recipeService.getRecipes().listen(
+      (recipes) {
+        _recipes = recipes;
+        _isLoading = false;
+        
+        // Reapply current search/filter if any
+        if (_currentSearchQuery.isNotEmpty || _currentDifficulty != null || _currentCategory != null) {
+          _applySearchAndFilters();
+        } else {
+          _filteredRecipes = [];
+        }
+        
+        notifyListeners();
+      },
+      onError: (error) {
+        _error = error.toString();
+        _isLoading = false;
+        notifyListeners();
+      },
+    );
   }
 
   // READ User's Recipes
   void subscribeToUserRecipes(String userId) {
-    _recipeService.getUserRecipes(userId).listen((recipes) {
-      _recipes = recipes;
-      notifyListeners();
-    }, onError: (error) {
-      _error = error.toString();
-      notifyListeners();
-    });
+    _isLoading = true;
+    notifyListeners();
+
+    _recipesSubscription?.cancel();
+    _recipesSubscription = _recipeService.getUserRecipes(userId).listen(
+      (recipes) {
+        _recipes = recipes;
+        _isLoading = false;
+        _filteredRecipes = [];
+        notifyListeners();
+      },
+      onError: (error) {
+        _error = error.toString();
+        _isLoading = false;
+        notifyListeners();
+      },
+    );
   }
 
   // UPDATE Recipe
@@ -215,13 +268,83 @@ class RecipeProvider with ChangeNotifier {
 
   // SEARCH Recipes
   void searchRecipes(String query) {
-    _recipeService.searchRecipes(query).listen((recipes) {
-      _recipes = recipes;
-      notifyListeners();
-    }, onError: (error) {
-      _error = error.toString();
-      notifyListeners();
-    });
+    _currentSearchQuery = query.toLowerCase().trim();
+    _applySearchAndFilters();
+    notifyListeners();
+  }
+
+  // Set filters separately
+  void setFilters({Difficulty? difficulty, String? category}) {
+    _currentDifficulty = difficulty;
+    _currentCategory = category;
+    _applySearchAndFilters();
+    notifyListeners();
+  }
+
+  // Apply search and filters
+  void _applySearchAndFilters() {
+    // If no search query and no filters, show all recipes
+    if (_currentSearchQuery.isEmpty && _currentDifficulty == null && _currentCategory == null) {
+      _filteredRecipes = [];
+      return;
+    }
+
+    _filteredRecipes = _recipes.where((recipe) {
+      // Search query matching 
+      bool matchesSearch = true;
+      if (_currentSearchQuery.isNotEmpty) {
+        final titleMatch = recipe.title.toLowerCase().contains(_currentSearchQuery);
+        final categoryMatch = recipe.category.toLowerCase().contains(_currentSearchQuery);
+        final tagsMatch = recipe.tags.any(
+          (tag) => tag.toLowerCase().contains(_currentSearchQuery),
+        );
+        final descriptionMatch = recipe.description.toLowerCase().contains(_currentSearchQuery);
+        
+        matchesSearch = titleMatch || categoryMatch || tagsMatch || descriptionMatch;
+      }
+
+      // Difficulty filter
+      bool matchesDifficulty = true;
+      if (_currentDifficulty != null) {
+        matchesDifficulty = recipe.difficulty == _currentDifficulty;
+      }
+
+      // Category filter
+      bool matchesCategory = true;
+      if (_currentCategory != null) {
+        matchesCategory = recipe.category.toLowerCase() == _currentCategory!.toLowerCase();
+      }
+
+      return matchesSearch && matchesDifficulty && matchesCategory;
+    }).toList();
+
+    // Sort by relevance only if there's a search query
+    if (_currentSearchQuery.isNotEmpty) {
+      _filteredRecipes.sort((a, b) {
+        final aTitle = a.title.toLowerCase().contains(_currentSearchQuery);
+        final bTitle = b.title.toLowerCase().contains(_currentSearchQuery);
+        
+        if (aTitle && !bTitle) return -1;
+        if (!aTitle && bTitle) return 1;
+        
+        final aCategory = a.category.toLowerCase().contains(_currentSearchQuery);
+        final bCategory = b.category.toLowerCase().contains(_currentSearchQuery);
+        
+        if (aCategory && !bCategory) return -1;
+        if (!aCategory && bCategory) return 1;
+        
+        return 0;
+      });
+    }
+  }
+
+  // Clear search and filters
+  void clearSearch() {
+    _currentSearchQuery = '';
+    _currentDifficulty = null;
+    _currentCategory = null;
+    _filteredRecipes = [];
+    notifyListeners();
   }
 
   // Clear error
@@ -239,5 +362,11 @@ class RecipeProvider with ChangeNotifier {
       notifyListeners();
       rethrow;
     }
+  }
+
+  @override
+  void dispose() {
+    _recipesSubscription?.cancel();
+    super.dispose();
   }
 }
