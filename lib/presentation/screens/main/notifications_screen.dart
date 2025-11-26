@@ -8,6 +8,59 @@ import 'recipes/recipe_detail_screen.dart';
 class NotificationsScreen extends StatelessWidget {
   const NotificationsScreen({Key? key}) : super(key: key);
 
+  // Mark notification as read
+  Future<void> _markAsRead(String userId, String notificationId) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .collection('notifications')
+          .doc(notificationId)
+          .update({'read': true});
+    } catch (e) {
+      debugPrint('Error marking notification as read: $e');
+    }
+  }
+
+  // Mark all notifications as read
+  Future<void> _markAllAsRead(BuildContext context, String userId) async {
+    try {
+      final batch = FirebaseFirestore.instance.batch();
+      
+      final notifications = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .collection('notifications')
+          .where('read', isEqualTo: false)
+          .get();
+
+      for (var doc in notifications.docs) {
+        batch.update(doc.reference, {'read': true});
+      }
+
+      await batch.commit();
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('All notifications marked as read'),
+            duration: Duration(seconds: 1),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Error marking all as read: $e');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to mark all as read'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
@@ -43,6 +96,28 @@ class NotificationsScreen extends StatelessWidget {
             color: AppColors.secondary,
           ),
         ),
+        actions: [
+          // Mark all as read button
+          StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('users')
+                .doc(user.uid)
+                .collection('notifications')
+                .where('read', isEqualTo: false)
+                .snapshots(),
+            builder: (context, snapshot) {
+              final hasUnread = snapshot.hasData && snapshot.data!.docs.isNotEmpty;
+              
+              if (!hasUnread) return const SizedBox.shrink();
+              
+              return IconButton(
+                icon: const Icon(Icons.done_all, color: AppColors.primary),
+                tooltip: 'Mark all as read',
+                onPressed: () => _markAllAsRead(context, user.uid),
+              );
+            },
+          ),
+        ],
       ),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
@@ -94,7 +169,11 @@ class NotificationsScreen extends StatelessWidget {
                 const _SectionHeader(title: 'Today'),
                 const SizedBox(height: 12),
                 ...groupedNotifications['today']!
-                    .map((notif) => _NotificationItem(notification: notif))
+                    .map((notif) => _NotificationItem(
+                          notification: notif,
+                          userId: user.uid,
+                          onMarkAsRead: _markAsRead,
+                        ))
                     .toList(),
                 const SizedBox(height: 24),
               ],
@@ -102,7 +181,11 @@ class NotificationsScreen extends StatelessWidget {
                 const _SectionHeader(title: 'Yesterday'),
                 const SizedBox(height: 12),
                 ...groupedNotifications['yesterday']!
-                    .map((notif) => _NotificationItem(notification: notif))
+                    .map((notif) => _NotificationItem(
+                          notification: notif,
+                          userId: user.uid,
+                          onMarkAsRead: _markAsRead,
+                        ))
                     .toList(),
                 const SizedBox(height: 24),
               ],
@@ -110,7 +193,11 @@ class NotificationsScreen extends StatelessWidget {
                 const _SectionHeader(title: 'This Week'),
                 const SizedBox(height: 12),
                 ...groupedNotifications['thisWeek']!
-                    .map((notif) => _NotificationItem(notification: notif))
+                    .map((notif) => _NotificationItem(
+                          notification: notif,
+                          userId: user.uid,
+                          onMarkAsRead: _markAsRead,
+                        ))
                     .toList(),
                 const SizedBox(height: 24),
               ],
@@ -118,7 +205,11 @@ class NotificationsScreen extends StatelessWidget {
                 const _SectionHeader(title: 'Older'),
                 const SizedBox(height: 12),
                 ...groupedNotifications['older']!
-                    .map((notif) => _NotificationItem(notification: notif))
+                    .map((notif) => _NotificationItem(
+                          notification: notif,
+                          userId: user.uid,
+                          onMarkAsRead: _markAsRead,
+                        ))
                     .toList(),
               ],
             ],
@@ -185,8 +276,14 @@ class _SectionHeader extends StatelessWidget {
 
 class _NotificationItem extends StatefulWidget {
   final QueryDocumentSnapshot notification;
+  final String userId;
+  final Future<void> Function(String userId, String notificationId) onMarkAsRead;
 
-  const _NotificationItem({required this.notification});
+  const _NotificationItem({
+    required this.notification,
+    required this.userId,
+    required this.onMarkAsRead,
+  });
 
   @override
   State<_NotificationItem> createState() => _NotificationItemState();
@@ -286,6 +383,27 @@ class _NotificationItemState extends State<_NotificationItem> {
     }
   }
 
+  void _handleTap() {
+    final data = widget.notification.data() as Map<String, dynamic>;
+    final type = data['type'] as String;
+    final recipeId = data['recipeId'] as String?;
+    
+    // Mark as read when tapped
+    if (data['read'] != true) {
+      widget.onMarkAsRead(widget.userId, widget.notification.id);
+    }
+
+    // Navigate based on type
+    if (recipeId != null && (type == 'like' || type == 'comment' || type == 'save')) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => RecipeDetailScreen(recipeId: recipeId),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final data = widget.notification.data() as Map<String, dynamic>;
@@ -295,6 +413,7 @@ class _NotificationItemState extends State<_NotificationItem> {
     final createdAt = (data['createdAt'] as Timestamp?)?.toDate();
     final recipeId = data['recipeId'] as String?;
     final recipeImage = data['recipeImage'] as String?;
+    final isRead = data['read'] == true;
 
     IconData icon;
     Color iconColor;
@@ -330,21 +449,12 @@ class _NotificationItemState extends State<_NotificationItem> {
     }
 
     return GestureDetector(
-      onTap: () {
-        if (recipeId != null && (type == 'like' || type == 'comment' || type == 'save')) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => RecipeDetailScreen(recipeId: recipeId),
-            ),
-          );
-        }
-      },
+      onTap: _handleTap,
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: data['read'] == true ? Colors.white : Colors.blue[50],
+          color: isRead ? Colors.white : Colors.blue[50],
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: Colors.grey[200]!),
         ),
@@ -413,6 +523,20 @@ class _NotificationItemState extends State<_NotificationItem> {
                 ],
               ),
             ),
+
+            // Unread indicator
+            if (!isRead) ...[
+              const SizedBox(width: 8),
+              Container(
+                width: 8,
+                height: 8,
+                decoration: const BoxDecoration(
+                  color: AppColors.primary,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 8),
+            ],
 
             // Action or Recipe Image
             if (actionWidget != null)
