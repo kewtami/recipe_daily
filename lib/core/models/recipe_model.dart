@@ -13,6 +13,7 @@ class RecipeModel {
   final int serves;
   final Duration cookTime;
   final Difficulty difficulty;
+  final String category;
   final List<Ingredient> ingredients;
   final List<RecipeStep> steps;
   final List<String> tags;
@@ -33,6 +34,7 @@ class RecipeModel {
     required this.serves,
     required this.cookTime,
     required this.difficulty,
+    this.category = 'Other',
     required this.ingredients,
     required this.steps,
     required this.tags,
@@ -71,6 +73,7 @@ class RecipeModel {
         (e) => e.name == data['difficulty'],
         orElse: () => Difficulty.medium,
       ),
+      category: data['category'] ?? 'Other',
       ingredients: (data['ingredients'] as List<dynamic>?)
               ?.map((i) => Ingredient.fromJson(i))
               .toList() ??
@@ -99,6 +102,7 @@ class RecipeModel {
       'serves': serves,
       'cookTimeSeconds': cookTime.inSeconds,
       'difficulty': difficulty.name,
+      'category': category,
       'ingredients': ingredients.map((i) => i.toJson()).toList(),
       'steps': steps.map((s) => s.toJson()).toList(),
       'tags': tags,
