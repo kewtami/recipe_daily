@@ -4,6 +4,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import 'package:recipe_daily/firebase_options.dart';
 import 'package:recipe_daily/presentation/providers/recipe_provider.dart';
+import 'package:recipe_daily/presentation/providers/user_provider.dart';
 import 'presentation/providers/auth_provider.dart';
 import 'package:recipe_daily/presentation/providers/interaction_provider.dart';
 import 'package:recipe_daily/presentation/providers/collection_provider.dart';
@@ -37,6 +38,7 @@ class RecipeDailyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => RecipeProvider()),
         ChangeNotifierProvider(create: (_) => InteractionProvider()),
+        ChangeNotifierProvider(create:  (_) => UserProvider()),
         ChangeNotifierProvider(create: (_) => CollectionProvider()),
       ],
       child: AuthStateListener(
