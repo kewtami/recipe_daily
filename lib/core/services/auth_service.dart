@@ -1,10 +1,12 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/user_model.dart';
 import 'otp_service.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn(
     scopes: [
       'email',
@@ -17,15 +19,21 @@ class AuthService {
   // Auth state changes stream
   Stream<User?> get authStateChanges => _auth.authStateChanges();
 
-// Sign In with Email & Password
+  // Sign In with Email & Password
   Future<UserModel?> signIn(String email, String password) async {
     try {
       UserCredential result = await _auth.signInWithEmailAndPassword(
         email: email,
         password: password,
       );
+      
+      // Update last login
+      if (result.user != null) {
+        await _updateLastLogin(result.user!.uid);
+      }
+      
       return _convertToUserModel(result.user);
-      } catch (e) {
+    } catch (e) {
       rethrow;
     }
   }
@@ -40,16 +48,22 @@ class AuthService {
 
       await result.user?.updateDisplayName(name);
 
-      // Generate and send OTP
+      // Create user document in Firestore
       if (result.user != null) {
-        final otp = _otpService.generateOTP();
+        await _createUserDocument(
+          userId: result.user!.uid,
+          email: email,
+          displayName: name,
+          photoURL: null,
+        );
         
+        // Generate and send OTP
+        final otp = _otpService.generateOTP();
         await _otpService.saveOTP(
           userId: result.user!.uid,
           otp: otp,
           email: email,
         );
-        
         await _otpService.sendOTPEmail(email: email, otp: otp);
       }
 
@@ -134,13 +148,28 @@ class AuthService {
       );
 
       UserCredential result = await _auth.signInWithCredential(credential);
+      
+      // Check if user document exists, create if not
+      final userDoc = await _firestore.collection('users').doc(result.user!.uid).get();
+      
+      if (!userDoc.exists) {
+        await _createUserDocument(
+          userId: result.user!.uid,
+          email: result.user!.email!,
+          displayName: result.user!.displayName,
+          photoURL: result.user!.photoURL,
+        );
+      } else {
+        await _updateLastLogin(result.user!.uid);
+      }
+      
       return _convertToUserModel(result.user);
     } catch (e) {
       rethrow;
     }
   }
 
-  // Sign Up with Google
+  // Sign Up with Google (checks for existing account)
   Future<UserModel?> signUpWithGoogle() async {
     try {
       await _googleSignIn.signOut();
@@ -169,6 +198,14 @@ class AuthService {
         );
       }
       
+      // Create user document for new user
+      await _createUserDocument(
+        userId: result.user!.uid,
+        email: result.user!.email!,
+        displayName: result.user!.displayName,
+        photoURL: result.user!.photoURL,
+      );
+      
       return _convertToUserModel(result.user);
     } catch (e) {
       rethrow;
@@ -184,6 +221,54 @@ class AuthService {
       ]);
     } catch (e) {
       // Ignore errors, force sign out
+    }
+  }
+
+  // Create user document in Firestore
+  Future<void> _createUserDocument({
+    required String userId,
+    required String email,
+    String? displayName,
+    String? photoURL,
+  }) async {
+    try {
+      await _firestore.collection('users').doc(userId).set({
+        'email': email,
+        'displayName': displayName,
+        'name': displayName,
+        'photoURL': photoURL,
+        'profileImageUrl': photoURL,
+        'bio': null,
+        'phoneNumber': null,
+        'recipesCount': 0,
+        'followersCount': 0,
+        'followingCount': 0,
+        'likesReceivedCount': 0,
+        'isPublic': true,
+        'emailVerified': false,
+        'preferences': [],
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+        'lastLoginAt': FieldValue.serverTimestamp(),
+      });
+      
+      print('User document created for $userId');
+    } catch (e) {
+      print('Error creating user document: $e');
+      rethrow;
+    }
+  }
+
+  // Update last login
+  Future<void> _updateLastLogin(String userId) async {
+    try {
+      await _firestore.collection('users').doc(userId).update({
+        'lastLoginAt': FieldValue.serverTimestamp(),
+      });
+      print('Updated last login for $userId');
+    } catch (e) {
+      print('Error updating last login: $e');
+      // Do not throw - this is not critical
     }
   }
 
@@ -217,6 +302,7 @@ class AuthService {
       email: user.email!,
       displayName: user.displayName,
       photoURL: user.photoURL,
+      createdAt: DateTime.now(),
     );
   }
 }
