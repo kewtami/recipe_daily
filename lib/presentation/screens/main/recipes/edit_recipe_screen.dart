@@ -303,7 +303,7 @@ class _EditRecipeScreenState extends State<EditRecipeScreen> {
         
         // Upload new step image if changed
         if (step.imageFile != null) {
-          print('📤 Uploading step ${step.stepNumber} image...');
+          print('Uploading step ${step.stepNumber} image...');
           stepImageUrl = await recipeProvider.uploadImage(
             step.imageFile!,
             'recipes/steps',
@@ -341,7 +341,7 @@ class _EditRecipeScreenState extends State<EditRecipeScreen> {
         updatedAt: DateTime.now(),
       );
 
-      print('💾 Updating recipe...');
+      print('Updating recipe...');
       final success = await recipeProvider.updateRecipe(
         widget.recipe.id,
         updatedRecipe,
