@@ -5,6 +5,7 @@ import 'package:recipe_daily/core/services/notification_service.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import '../../../core/constants/app_colors.dart';
 import 'recipes/recipe_detail_screen.dart';
+import 'profile/user_profile_screen.dart';
 
 class NotificationsScreen extends StatelessWidget {
   const NotificationsScreen({Key? key}) : super(key: key);
@@ -420,7 +421,24 @@ class _NotificationItemState extends State<_NotificationItem> {
     }
 
     // Navigate based on type
-    if (recipeId != null && (type == 'like' || type == 'comment' || type == 'save')) {
+    if (type == 'follow') {
+      // Navigate to user profile
+      final fromUserId = data['fromUserId'] as String?;
+      final fromUserName = data['fromUserName'] as String?;
+      
+      if (fromUserId != null) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => UserProfileScreen(
+              userId: fromUserId,
+              userName: fromUserName,
+            ),
+          ),
+        );
+      }
+    } else if (recipeId != null && (type == 'like' || type == 'comment' || type == 'save')) {
+      // Navigate to recipe
       Navigator.push(
         context,
         MaterialPageRoute(

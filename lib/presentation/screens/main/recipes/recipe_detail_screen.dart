@@ -12,6 +12,7 @@ import '../../../widgets/interactions/comments_section.dart';
 import '../../../widgets/recipes/recipe_options_bottom_sheet.dart';
 import '../../../widgets/interactions/step_timer.dart';
 import '../../../providers/interaction_provider.dart';
+import '../profile/user_profile_screen.dart';
 
 class RecipeDetailScreen extends StatefulWidget {
   final String recipeId;
@@ -35,8 +36,9 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
   @override
   void initState() {
     super.initState();
+    
     _loadRecipe();
-        // Subscribe to realtime updates
+    // Subscribe to realtime updates
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final interactionProvider = Provider.of<InteractionProvider>(
         context,
@@ -510,30 +512,68 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
   }
 
   Widget _buildAuthorInfo(RecipeModel recipe) {
-    return Row(
-      children: [
-        CircleAvatar(
-          radius: 16,
-          backgroundImage: recipe.authorPhotoUrl != null
-              ? NetworkImage(recipe.authorPhotoUrl!)
-              : null,
-          child: recipe.authorPhotoUrl == null
-              ? Text(
-                  recipe.authorName[0].toUpperCase(),
-                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-                )
-              : null,
-        ),
-        const SizedBox(width: 8),
-        Text(
-          recipe.authorName,
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: AppColors.secondary,
+    final currentUser = FirebaseAuth.instance.currentUser;
+    final isOwnRecipe = recipe.authorId == currentUser?.uid;
+
+    return GestureDetector(
+      onTap: isOwnRecipe ? null : () {
+        // Navigate to user profile
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => UserProfileScreen(
+              userId: recipe.authorId,
+              userName: recipe.authorName,
+            ),
           ),
-        ),
-      ],
+        );
+      },
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 16,
+            backgroundImage: recipe.authorPhotoUrl != null
+                ? NetworkImage(recipe.authorPhotoUrl!)
+                : null,
+            child: recipe.authorPhotoUrl == null
+                ? Text(
+                    recipe.authorName[0].toUpperCase(),
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                  )
+                : null,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  recipe.authorName,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.secondary,
+                  ),
+                ),
+                if (!isOwnRecipe)
+                  Text(
+                    'View profile',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          if (!isOwnRecipe)
+            Icon(
+              Icons.chevron_right,
+              size: 20,
+              color: Colors.grey[400],
+            ),
+        ],
+      ),
     );
   }
 

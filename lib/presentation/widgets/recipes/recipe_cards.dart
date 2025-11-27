@@ -5,6 +5,7 @@ import 'package:recipe_daily/presentation/widgets/interactions/save_button.dart'
 import '../../../core/constants/app_colors.dart';
 import '../../../core/models/recipe_model.dart';
 import '../../providers/interaction_provider.dart';
+import '../../screens/main/profile/user_profile_screen.dart';
 
 /// Compact recipe card - used in grids and lists
 class RecipeCard extends StatelessWidget {
@@ -206,29 +207,52 @@ class TrendingRecipeCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Author info
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 14,
-                  backgroundImage: recipe.authorPhotoUrl != null
-                      ? NetworkImage(recipe.authorPhotoUrl!)
-                      : null,
-                  child: recipe.authorPhotoUrl == null
-                      ? Text(
-                          recipe.authorName[0].toUpperCase(),
-                          style: const TextStyle(fontSize: 12),
-                        )
-                      : null,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'By ${recipe.authorName}',
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-                    overflow: TextOverflow.ellipsis,
+            GestureDetector(
+              onTap: () {
+                final currentUser = FirebaseAuth.instance.currentUser;
+                // Do not navigate if it's current user's recipe
+                if (recipe.authorId != currentUser?.uid) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => UserProfileScreen(
+                        userId: recipe.authorId,
+                        userName: recipe.authorName,
+                      ),
+                    ),
+                  );
+                }
+              },
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 14,
+                    backgroundImage: recipe.authorPhotoUrl != null
+                        ? NetworkImage(recipe.authorPhotoUrl!)
+                        : null,
+                    child: recipe.authorPhotoUrl == null
+                        ? Text(
+                            recipe.authorName[0].toUpperCase(),
+                            style: const TextStyle(fontSize: 12),
+                          )
+                        : null,
                   ),
-                ),
-              ],
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'By ${recipe.authorName}',
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (recipe.authorId != FirebaseAuth.instance.currentUser?.uid)
+                    Icon(
+                      Icons.chevron_right,
+                      size: 16,
+                      color: Colors.grey[400],
+                    ),
+                ],
+              ),
             ),
             const SizedBox(height: 10),
             
