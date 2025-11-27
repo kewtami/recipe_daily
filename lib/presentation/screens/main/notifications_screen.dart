@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:recipe_daily/core/services/notification_service.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import '../../../core/constants/app_colors.dart';
 import 'recipes/recipe_detail_screen.dart';
@@ -327,61 +328,86 @@ class _NotificationItemState extends State<_NotificationItem> {
   }
 
   Future<void> _toggleFollow() async {
-    final data = widget.notification.data() as Map<String, dynamic>;
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
+  final data = widget.notification.data() as Map<String, dynamic>;
+  final user = FirebaseAuth.instance.currentUser;
+  if (user == null) return;
 
-    final followerId = data['fromUserId'] as String?;
-    if (followerId == null) return;
+  final followerId = data['fromUserId'] as String?;
+  if (followerId == null) return;
 
+  setState(() {
+    _isFollowing = !_isFollowing;
+  });
+
+  try {
+    final batch = FirebaseFirestore.instance.batch();
+    
+    final followingRef = FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('following')
+        .doc(followerId);
+
+    final followerRef = FirebaseFirestore.instance
+        .collection('users')
+        .doc(followerId)
+        .collection('followers')
+        .doc(user.uid);
+
+    if (_isFollowing) {
+      // Follow
+      batch.set(followingRef, {
+        'followedAt': FieldValue.serverTimestamp(),
+      });
+      batch.set(followerRef, {
+        'followedAt': FieldValue.serverTimestamp(),
+      });
+      
+      await batch.commit();
+      
+      // Create notification after successful follow
+      await NotificationService.createFollowNotification(
+        followedUserId: followerId,
+        followerUserId: user.uid,
+        followerUserName: user.displayName ?? 'User',
+        followerUserPhoto: user.photoURL,
+      );
+    } else {
+      // Unfollow
+      batch.delete(followingRef);
+      batch.delete(followerRef);
+      await batch.commit();
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _isFollowing
+                ? 'Now following ${data['fromUserName']}'
+                : 'Unfollowed ${data['fromUserName']}',
+          ),
+          backgroundColor:
+              _isFollowing ? AppColors.success : Colors.grey[700],
+          duration: const Duration(seconds: 1),
+        ),
+      );
+    }
+  } catch (e) {
     setState(() {
       _isFollowing = !_isFollowing;
     });
-
-    try {
-      final followingRef = FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .collection('following')
-          .doc(followerId);
-
-      if (_isFollowing) {
-        await followingRef.set({
-          'followedAt': FieldValue.serverTimestamp(),
-        });
-      } else {
-        await followingRef.delete();
-      }
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              _isFollowing
-                  ? 'Now following ${data['fromUserName']}'
-                  : 'Unfollowed ${data['fromUserName']}',
-            ),
-            backgroundColor:
-                _isFollowing ? AppColors.success : Colors.grey[700],
-            duration: const Duration(seconds: 1),
-          ),
-        );
-      }
-    } catch (e) {
-      setState(() {
-        _isFollowing = !_isFollowing;
-      });
-      
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to update follow status'),
-            backgroundColor: AppColors.error,
-          ),
-        );
-      }
+    
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to update follow status'),
+          backgroundColor: AppColors.error,
+        ),
+      );
     }
   }
+}
 
   void _handleTap() {
     final data = widget.notification.data() as Map<String, dynamic>;
