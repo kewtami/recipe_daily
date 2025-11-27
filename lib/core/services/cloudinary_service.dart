@@ -58,14 +58,14 @@ class CloudinaryService {
       
       final request = http.MultipartRequest('POST', Uri.parse(url));
       
-      // Add file
-      final fileStream = http.ByteStream(file.openRead());
-      final fileLength = file.lengthSync();
+      // Read file bytes once
+      final fileBytes = await file.readAsBytes();
+      final fileLength = fileBytes.length;
       
-      request.files.add(http.MultipartFile(
+      // Add file from bytes
+      request.files.add(http.MultipartFile.fromBytes(
         'file',
-        fileStream,
-        fileLength,
+        fileBytes,
         filename: file.path.split('/').last,
       ));
       
@@ -85,33 +85,27 @@ class CloudinaryService {
         request.fields['eager_async'] = 'true';
       }
       
-      // Send request with progress tracking
+      print('Sending request to Cloudinary...');
+      
+      // Send request
       final streamedResponse = await request.send();
       
-      // Track upload progress
-      if (onProgress != null) {
-        int bytesUploaded = 0;
-        streamedResponse.stream.listen(
-          (chunk) {
-            bytesUploaded += chunk.length;
-            final progress = bytesUploaded / fileLength;
-            onProgress(progress);
-          },
-        );
-      }
+      print('Response status: ${streamedResponse.statusCode}');
       
-      final response = await http.Response.fromStream(streamedResponse);
+      // Convert response to bytes
+      final responseBytes = await streamedResponse.stream.toBytes();
+      final responseString = String.fromCharCodes(responseBytes);
       
-      if (response.statusCode == 200) {
-        final jsonResponse = jsonDecode(response.body);
+      if (streamedResponse.statusCode == 200) {
+        final jsonResponse = jsonDecode(responseString);
         final mediaUrl = jsonResponse['secure_url'] as String;
         
         print('$mediaTypeStr uploaded successfully');
         print('   URL: $mediaUrl');
         return mediaUrl;
       } else {
-        print('Upload failed: ${response.body}');
-        throw Exception('Failed to upload $mediaTypeStr: ${response.statusCode}');
+        print('Upload failed: $responseString');
+        throw Exception('Failed to upload $mediaTypeStr: ${streamedResponse.statusCode} - $responseString');
       }
     } catch (e) {
       print('Upload error: $e');
