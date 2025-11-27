@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import 'package:recipe_daily/presentation/providers/user_provider.dart';
+import 'package:recipe_daily/presentation/screens/main/recipes/draft_screen.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/recipe_provider.dart';
 import '../../providers/interaction_provider.dart';
@@ -488,6 +489,19 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 title: const Text('Edit Profile'),
                 onTap: () {
                   Navigator.pop(context);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.drafts, color: AppColors.primary),
+                title: const Text('My Drafts'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const DraftsScreen(),
+                    ),
+                  );
                 },
               ),
               ListTile(
