@@ -113,34 +113,6 @@ class NotificationService {
     if (followedUserId == followerUserId) return;
 
     try {
-      // Check if there's already a recent follow notification (within 24 hours)
-      final recentNotif = await _firestore
-          .collection('users')
-          .doc(followedUserId)
-          .collection('notifications')
-          .where('type', isEqualTo: 'follow')
-          .where('fromUserId', isEqualTo: followerUserId)
-          .orderBy('createdAt', descending: true)
-          .limit(1)
-          .get();
-
-      if (recentNotif.docs.isNotEmpty) {
-        final lastNotif = recentNotif.docs.first;
-        final lastNotifTime =
-            (lastNotif.data()['createdAt'] as Timestamp?)?.toDate();
-        
-        if (lastNotifTime != null) {
-          final hoursSince = DateTime.now().difference(lastNotifTime).inHours;
-          if (hoursSince < 24) {
-            // Update existing notification instead of creating new one
-            await lastNotif.reference.update({
-              'createdAt': FieldValue.serverTimestamp(),
-            });
-            return;
-          }
-        }
-      }
-
       // Create new follow notification
       await _firestore
           .collection('users')
@@ -158,7 +130,7 @@ class NotificationService {
       debugPrint('Error creating follow notification: $e');
     }
   }
-
+  
   // Mark notification as read
   static Future<void> markAsRead(String userId, String notificationId) async {
     try {
