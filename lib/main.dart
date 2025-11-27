@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
+import 'package:recipe_daily/core/services/draft_service.dart';
 import 'package:recipe_daily/firebase_options.dart';
+import 'package:recipe_daily/presentation/providers/draft_provider.dart';
 import 'package:recipe_daily/presentation/providers/recipe_provider.dart';
 import 'package:recipe_daily/presentation/providers/user_provider.dart';
 import 'presentation/providers/auth_provider.dart';
@@ -25,6 +27,9 @@ void main() async {
   // Initialize Calorie Service
   await CalorieService().initialize();
 
+  // Initialize Draft Service
+  await DraftService.database;
+
   runApp(const RecipeDailyApp());
 }
 
@@ -40,6 +45,7 @@ class RecipeDailyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => InteractionProvider()),
         ChangeNotifierProvider(create:  (_) => UserProvider()),
         ChangeNotifierProvider(create: (_) => CollectionProvider()),
+        ChangeNotifierProvider(create:  (_) => DraftProvider()),
       ],
       child: AuthStateListener(
         child: MaterialApp(
