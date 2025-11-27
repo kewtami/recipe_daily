@@ -2,16 +2,25 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:recipe_daily/presentation/screens/main/main_screen.dart';
 import 'dart:io';
+import 'dart:async';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/models/recipe_model.dart';
 import '../../../../core/services/calorie_service.dart';
+import '../../../../core/services/draft_service.dart';
 import '../../../providers/recipe_provider.dart';
+import '../../../providers/draft_provider.dart';
 import '../../../widgets/common/custom_button.dart';
 
 class CreateRecipeScreen extends StatefulWidget {
-  const CreateRecipeScreen({Key? key}) : super(key: key);
+  final String? draftId; // Load existing draft
+  
+  const CreateRecipeScreen({
+    Key? key,
+    this.draftId,
+  }) : super(key: key);
 
   @override
   State<CreateRecipeScreen> createState() => _CreateRecipeScreenState();
@@ -65,8 +74,210 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
   bool _isCalculatingCalories = false;
   final CalorieService _calorieService = CalorieService();
 
+  // ========== DRAFT SUPPORT ==========
+  String? _currentDraftId;
+  Timer? _autoSaveTimer;
+  DateTime? _lastSaveTime;
+  bool _isSavingDraft = false;
+  
+  @override
+  void initState() {
+    super.initState();
+    _initializeDraft();
+    _setupAutoSave();
+  }
+
+  Future<void> _initializeDraft() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    if (widget.draftId != null) {
+      // Load existing draft
+      await _loadDraft(widget.draftId!);
+    } else {
+      // Create new draft
+      final draftProvider = Provider.of<DraftProvider>(context, listen: false);
+      final draft = await draftProvider.createNewDraft(user.uid);
+      _currentDraftId = draft.id;
+      debugPrint('[DRAFT] New draft created: $_currentDraftId');
+    }
+  }
+
+  Future<void> _loadDraft(String draftId) async {
+    try {
+      final draft = await DraftService.getDraft(draftId);
+      if (draft == null) return;
+
+      setState(() {
+        _currentDraftId = draft.id;
+        _titleController.text = draft.title;
+        _descriptionController.text = draft.description;
+        _servesController.text = draft.serves.toString();
+        
+        // Load cook time
+        final cookTime = Duration(seconds: draft.cookTimeSeconds);
+        _hoursController.text = cookTime.inHours.toString().padLeft(2, '0');
+        _minutesController.text = (cookTime.inMinutes % 60).toString().padLeft(2, '0');
+        _secondsController.text = (cookTime.inSeconds % 60).toString().padLeft(2, '0');
+        
+        _difficulty = Difficulty.values.firstWhere(
+          (d) => d.name == draft.difficulty,
+          orElse: () => Difficulty.medium,
+        );
+        
+        // Load cover image if exists
+        if (draft.coverImagePath != null) {
+          _coverImage = File(draft.coverImagePath!);
+        }
+        
+        // Load ingredients
+        _ingredients.clear();
+        for (var ingData in draft.ingredients) {
+          final ing = IngredientInput();
+          ing.quantityController.text = ingData['quantity'].toString();
+          ing.unit = ingData['unit'] ?? 'g';
+          ing.nameController.text = ingData['name'] ?? '';
+          ing.method = CookingMethod.values.firstWhere(
+            (m) => m.name == ingData['method'],
+            orElse: () => CookingMethod.raw,
+          );
+          ing.calories = ingData['calories'] ?? 0;
+          _ingredients.add(ing);
+        }
+        
+        // Load steps
+        _steps.clear();
+        for (var stepData in draft.steps) {
+          final step = StepInput(stepNumber: stepData['stepNumber'] ?? 1);
+          step.instructionController.text = stepData['instruction'] ?? '';
+          // Cannot load step images from draft
+          _steps.add(step);
+        }
+        
+        // Load tags
+        _selectedTags.addAll(draft.tags);
+      });
+      
+      // Calculate calories
+      await _calculateTotalCalories();
+      
+      debugPrint('[DRAFT] Draft loaded: $draftId');
+    } catch (e) {
+      debugPrint('[DRAFT] Error loading draft: $e');
+    }
+  }
+
+  void _setupAutoSave() {
+    // Listen to all text controllers
+    _titleController.addListener(_scheduleAutoSave);
+    _descriptionController.addListener(_scheduleAutoSave);
+    _servesController.addListener(_scheduleAutoSave);
+  }
+
+  void _scheduleAutoSave() {
+    _autoSaveTimer?.cancel();
+    _autoSaveTimer = Timer(const Duration(seconds: 3), () {
+      _saveDraft(showSnackbar: false);
+    });
+  }
+
+  Future<void> _saveDraft({bool showSnackbar = true}) async {
+    if (_isSavingDraft) return;
+    if (_currentDraftId == null) return;
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    setState(() {
+      _isSavingDraft = true;
+    });
+
+    try {
+      // Prepare ingredients data
+      final ingredientsData = _ingredients
+          .where((ing) => ing.nameController.text.isNotEmpty)
+          .map((ing) => {
+                'quantity': double.tryParse(ing.quantityController.text) ?? 0,
+                'unit': ing.unit,
+                'name': ing.nameController.text,
+                'method': ing.method.name,
+                'calories': ing.calories,
+              })
+          .toList();
+
+      // Prepare steps data
+      final stepsData = _steps
+          .where((step) => step.instructionController.text.isNotEmpty)
+          .map((step) => {
+                'stepNumber': step.stepNumber,
+                'instruction': step.instructionController.text,
+                'timerSeconds': step.timerSeconds,
+              })
+          .toList();
+
+      final draft = RecipeDraft(
+        id: _currentDraftId!,
+        userId: user.uid,
+        title: _titleController.text,
+        description: _descriptionController.text,
+        coverImagePath: _coverImage?.path,
+        serves: int.tryParse(_servesController.text) ?? 1,
+        cookTimeSeconds: _getCookTime().inSeconds,
+        difficulty: _difficulty.name,
+        ingredients: ingredientsData,
+        steps: stepsData,
+        tags: _selectedTags,
+        createdAt: DateTime.now(), // Will be preserved from original
+        updatedAt: DateTime.now(),
+      );
+
+      await DraftService.saveDraft(draft);
+      
+      setState(() {
+        _lastSaveTime = DateTime.now();
+      });
+
+      if (showSnackbar && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white, size: 20),
+                SizedBox(width: 12),
+                Text('Draft saved'),
+              ],
+            ),
+            backgroundColor: AppColors.success,
+            duration: Duration(seconds: 1),
+          ),
+        );
+      }
+      
+      debugPrint('[DRAFT] Draft saved: $_currentDraftId');
+    } catch (e) {
+      debugPrint('[DRAFT] Error saving draft: $e');
+    } finally {
+      setState(() {
+        _isSavingDraft = false;
+      });
+    }
+  }
+
+  Future<void> _deleteDraft() async {
+    if (_currentDraftId == null) return;
+    
+    try {
+      await DraftService.deleteDraft(_currentDraftId!);
+      debugPrint('[DRAFT] Draft deleted: $_currentDraftId');
+    } catch (e) {
+      debugPrint('[DRAFT] Error deleting draft: $e');
+    }
+  }
+
   @override
   void dispose() {
+    _autoSaveTimer?.cancel();
+    _saveDraft(showSnackbar: false);
     _titleController.dispose();
     _descriptionController.dispose();
     _servesController.dispose();
@@ -97,18 +308,21 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
           _coverImage = File(image.path);
         });
         
+        // Auto-save after image change
+        _scheduleAutoSave();
+        
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
+            const SnackBar(
               content: Row(
-                children: const [
+                children: [
                   Icon(Icons.check_circle, color: Colors.white, size: 20),
                   SizedBox(width: 12),
-                  Text('Cover image added successfully'),
+                  Text('Cover image added'),
                 ],
               ),
               backgroundColor: AppColors.success,
-              duration: const Duration(seconds: 2),
+              duration: Duration(seconds: 1),
             ),
           );
         }
@@ -116,16 +330,15 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+          const SnackBar(
             content: Row(
-              children: const [
+              children: [
                 Icon(Icons.error_outline, color: Colors.white, size: 20),
                 SizedBox(width: 12),
-                Expanded(child: Text('Failed to pick image. Please try again')),
+                Expanded(child: Text('Failed to pick image')),
               ],
             ),
             backgroundColor: AppColors.error,
-            duration: const Duration(seconds: 3),
           ),
         );
       }
@@ -146,39 +359,10 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
         setState(() {
           _steps[stepIndex].imageFile = File(image.path);
         });
-        
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Row(
-                children: [
-                  const Icon(Icons.check_circle, color: Colors.white, size: 20),
-                  const SizedBox(width: 12),
-                  Text('Step ${stepIndex + 1} image added'),
-                ],
-              ),
-              backgroundColor: AppColors.success,
-              duration: const Duration(seconds: 2),
-            ),
-          );
-        }
+        _scheduleAutoSave();
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: const [
-                Icon(Icons.error_outline, color: Colors.white, size: 20),
-                SizedBox(width: 12),
-                Expanded(child: Text('Failed to pick step image')),
-              ],
-            ),
-            backgroundColor: AppColors.error,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
+      debugPrint('Error picking step image: $e');
     }
   }
 
@@ -186,6 +370,7 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
     setState(() {
       _ingredients.add(IngredientInput());
     });
+    _scheduleAutoSave();
   }
 
   void _removeIngredient(int index) {
@@ -195,22 +380,7 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
         _ingredients.removeAt(index);
       });
       _calculateTotalCalories();
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: const [
-                Icon(Icons.info_outline, color: Colors.white, size: 20),
-                SizedBox(width: 12),
-                Text('Recipe must have at least one ingredient'),
-              ],
-            ),
-            backgroundColor: Colors.orange[700],
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      }
+      _scheduleAutoSave();
     }
   }
 
@@ -218,6 +388,7 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
     setState(() {
       _steps.add(StepInput(stepNumber: _steps.length + 1));
     });
+    _scheduleAutoSave();
   }
 
   void _removeStep(int index) {
@@ -225,27 +396,11 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
       setState(() {
         _steps[index].dispose();
         _steps.removeAt(index);
-        // Renumber steps
         for (int i = 0; i < _steps.length; i++) {
           _steps[i].stepNumber = i + 1;
         }
       });
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: const [
-                Icon(Icons.info_outline, color: Colors.white, size: 20),
-                SizedBox(width: 12),
-                Text('Recipe must have at least one step'),
-              ],
-            ),
-            backgroundColor: Colors.orange[700],
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      }
+      _scheduleAutoSave();
     }
   }
 
@@ -255,22 +410,16 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
     });
 
     int total = 0;
-    int successCount = 0;
-    int errorCount = 0;
     
-    // Clear previous errors
     for (var ing in _ingredients) {
       ing.errorMessage = null;
-    }
-    
-    for (var ing in _ingredients) {
+      
       if (ing.nameController.text.isNotEmpty &&
           ing.quantityController.text.isNotEmpty) {
         try {
           final quantity = double.tryParse(ing.quantityController.text);
           if (quantity == null || quantity <= 0) {
             ing.errorMessage = 'Invalid quantity';
-            errorCount++;
             continue;
           }
 
@@ -282,10 +431,8 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
           );
           ing.calories = calories;
           total += calories;
-          successCount++;
         } catch (e) {
-          errorCount++;
-          ing.errorMessage = 'Could not calculate calories';
+          ing.errorMessage = 'Could not calculate';
         }
       }
     }
@@ -294,59 +441,6 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
       _totalCalories = total;
       _isCalculatingCalories = false;
     });
-    
-    // Show result feedback
-    if (mounted) {
-      if (errorCount > 0 && successCount > 0) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 20),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'Calculated $successCount ingredients. $errorCount failed',
-                  ),
-                ),
-              ],
-            ),
-            backgroundColor: Colors.orange[700],
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      } else if (errorCount > 0) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: const [
-                Icon(Icons.error_outline, color: Colors.white, size: 20),
-                SizedBox(width: 12),
-                Expanded(
-                  child: Text('Failed to calculate calories. Check ingredients'),
-                ),
-              ],
-            ),
-            backgroundColor: AppColors.error,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      } else if (successCount > 0) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.check_circle, color: Colors.white, size: 20),
-                const SizedBox(width: 12),
-                Text('Total: $total kcal calculated'),
-              ],
-            ),
-            backgroundColor: AppColors.success,
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      }
-    }
   }
 
   Duration _getCookTime() {
@@ -359,16 +453,9 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
   Future<void> _createRecipe() async {
     if (!_formKey.currentState!.validate()) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: const [
-              Icon(Icons.error_outline, color: Colors.white, size: 20),
-              SizedBox(width: 12),
-              Expanded(child: Text('Please fill all required fields')),
-            ],
-          ),
+        const SnackBar(
+          content: Text('Please fill all required fields'),
           backgroundColor: AppColors.error,
-          duration: const Duration(seconds: 3),
         ),
       );
       return;
@@ -376,22 +463,14 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
 
     if (_coverImage == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: const [
-              Icon(Icons.error_outline, color: Colors.white, size: 20),
-              SizedBox(width: 12),
-              Text('Please add a cover image'),
-            ],
-          ),
+        const SnackBar(
+          content: Text('Please add a cover image'),
           backgroundColor: AppColors.error,
-          duration: const Duration(seconds: 3),
         ),
       );
       return;
     }
 
-    // Validate ingredients
     final validIngredients = _ingredients.where(
       (ing) => ing.nameController.text.isNotEmpty && 
                 ing.quantityController.text.isNotEmpty
@@ -399,38 +478,23 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
 
     if (validIngredients.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: const [
-              Icon(Icons.error_outline, color: Colors.white, size: 20),
-              SizedBox(width: 12),
-              Text('Please add at least one ingredient'),
-            ],
-          ),
+        const SnackBar(
+          content: Text('Add at least one ingredient'),
           backgroundColor: AppColors.error,
-          duration: const Duration(seconds: 3),
         ),
       );
       return;
     }
 
-    // Validate steps
     final validSteps = _steps.where(
       (step) => step.instructionController.text.isNotEmpty
     ).toList();
 
     if (validSteps.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: const [
-              Icon(Icons.error_outline, color: Colors.white, size: 20),
-              SizedBox(width: 12),
-              Text('Please add at least one step'),
-            ],
-          ),
+        const SnackBar(
+          content: Text('Add at least one step'),
           backgroundColor: AppColors.error,
-          duration: const Duration(seconds: 3),
         ),
       );
       return;
@@ -439,7 +503,6 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
     final recipeProvider = Provider.of<RecipeProvider>(context, listen: false);
     
     try {
-      // Prepare ingredients
       final ingredients = validIngredients
           .map((ing) => Ingredient(
                 quantity: double.parse(ing.quantityController.text),
@@ -450,7 +513,6 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
               ))
           .toList();
 
-      // Prepare steps with images
       final steps = validSteps
           .map((step) => RecipeStep(
                 stepNumber: step.stepNumber,
@@ -475,63 +537,38 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
         totalCalories: _totalCalories,
       );
 
+      // Delete draft after successful publish
+      await _deleteDraft();
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+          const SnackBar(
             content: Row(
-              children: const [
+              children: [
                 Icon(Icons.check_circle, color: Colors.white, size: 20),
                 SizedBox(width: 12),
                 Text('Recipe created successfully!'),
               ],
             ),
             backgroundColor: AppColors.success,
-            duration: const Duration(seconds: 2),
           ),
         );
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (context) => const MainScreen()),
           (route) => false,
-        ); // Go back to home
+        );
       }
     } catch (e) {
       if (mounted) {
-        String errorMsg = e.toString().replaceAll('Exception: ', '');
-        
-        // User-friendly error messages
-        if (errorMsg.contains('network') || errorMsg.contains('connection')) {
-          errorMsg = 'Network error. Please check your connection and try again';
-        } else if (errorMsg.contains('permission') || errorMsg.contains('denied')) {
-          errorMsg = 'Storage permission denied. Please allow access in settings';
-        } else if (errorMsg.isEmpty) {
-          errorMsg = 'Failed to create recipe. Please try again';
-        }
-
         showDialog(
           context: context,
           builder: (context) => AlertDialog(
-            title: Row(
-              children: const [
-                Icon(Icons.error_outline, color: AppColors.error),
-                SizedBox(width: 12),
-                Text('Failed to Create Recipe'),
-              ],
-            ),
-            content: Text(errorMsg),
+            title: const Text('Failed to Create Recipe'),
+            content: Text(e.toString()),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
                 child: const Text('OK'),
-              ),
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  _createRecipe(); // Retry
-                },
-                child: const Text(
-                  'Retry',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
               ),
             ],
           ),
@@ -547,52 +584,44 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.secondary),
-          onPressed: () {
-            // Show confirmation if user has entered data
-            if (_titleController.text.isNotEmpty || 
-                _descriptionController.text.isNotEmpty ||
-                _coverImage != null) {
-              showDialog(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: const Text('Discard Recipe?'),
-                  content: const Text(
-                    'You have unsaved changes. Are you sure you want to leave?',
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Cancel'),
-                    ),
-                    TextButton(
-                      onPressed: () {
-                        Navigator.pop(context); // Close dialog
-                        Navigator.pop(context); // Close screen
-                      },
-                      child: const Text(
-                        'Discard',
-                        style: TextStyle(color: AppColors.error),
-                      ),
-                    ),
-                  ],
+        title: Column(
+          children: [
+            const Text(
+              'Create Recipe',
+              style: TextStyle(
+                color: AppColors.secondary,
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            if (_lastSaveTime != null)
+              Text(
+                'Saved ${_getTimeAgo(_lastSaveTime!)}',
+                style: TextStyle(
+                  color: Colors.grey[600],
+                  fontSize: 12,
                 ),
-              );
-            } else {
-              Navigator.pop(context);
-            }
-          },
-        ),
-        title: const Text(
-          'Create Recipe',
-          style: TextStyle(
-            color: AppColors.secondary,
-            fontSize: 20,
-            fontWeight: FontWeight.w600,
-          ),
+              ),
+          ],
         ),
         centerTitle: true,
+        actions: [
+          // Save Draft Button
+          IconButton(
+            icon: _isSavingDraft
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppColors.primary,
+                    ),
+                  )
+                : const Icon(Icons.save, color: AppColors.primary),
+            onPressed: () => _saveDraft(showSnackbar: true),
+            tooltip: 'Save Draft',
+          ),
+        ],
       ),
       body: Form(
         key: _formKey,
@@ -601,6 +630,33 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Draft indicator
+              if (_currentDraftId != null)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.blue[50],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.blue[200]!),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.drafts, color: Colors.blue[700], size: 20),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Auto-saving as draft every 3 seconds',
+                          style: TextStyle(
+                            color: Colors.blue[900],
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              
               // Cover Image
               Center(child: _buildCoverImagePicker()),
               const SizedBox(height: 24),
@@ -609,7 +665,7 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
               _buildTextField(
                 controller: _titleController,
                 hintText: 'Recipe Title',
-                validator: (v) => v?.isEmpty ?? true ? 'Recipe title is required' : null,
+                validator: (v) => v?.isEmpty ?? true ? 'Required' : null,
               ),
               const SizedBox(height: 16),
 
@@ -618,19 +674,15 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
                 controller: _descriptionController,
                 hintText: 'Description',
                 maxLines: 3,
-                validator: (v) => v?.isEmpty ?? true ? 'Description is required' : null,
+                validator: (v) => v?.isEmpty ?? true ? 'Required' : null,
               ),
               const SizedBox(height: 24),
 
-              // Serves
+              // Serves, Cook Time, Difficulty
               _buildServesInput(),
               const SizedBox(height: 16),
-
-              // Cook Time
               _buildCookTimeInput(),
               const SizedBox(height: 16),
-
-              // Difficulty
               _buildDifficultyDropdown(),
               const SizedBox(height: 32),
 
@@ -650,7 +702,7 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
               Consumer<RecipeProvider>(
                 builder: (context, provider, _) {
                   return CustomButton(
-                    text: 'Create Recipe',
+                    text: 'Publish Recipe',
                     onPressed: _createRecipe,
                     isLoading: provider.isLoading,
                   );
@@ -662,6 +714,14 @@ class _CreateRecipeScreenState extends State<CreateRecipeScreen> {
         ),
       ),
     );
+  }
+
+  String _getTimeAgo(DateTime time) {
+    final diff = DateTime.now().difference(time);
+    if (diff.inSeconds < 60) return 'just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    return '${diff.inDays}d ago';
   }
 
   Widget _buildCoverImagePicker() {
