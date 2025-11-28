@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
 import 'cloudinary_service.dart';
 import 'dart:io';
 import '../models/recipe_model.dart';
@@ -9,6 +10,150 @@ class RecipeService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final CloudinaryService _cloudinaryService = CloudinaryService();
 
+  // Track view when user opens recipe
+  Future<void> trackView(String recipeId) async {
+    try {
+      await _firestore.collection('recipes').doc(recipeId).update({
+        'viewsCount': FieldValue.increment(1),
+      });
+    } catch (e) {
+      debugPrint('Error tracking view: $e');
+    }
+  }
+
+  // Get Trending Recipes (based on engagement score and recency)
+  Stream<List<RecipeModel>> getTrendingRecipes({int limit = 4}) {
+    return _firestore
+        .collection('recipes')
+        .orderBy('createdAt', descending: true)
+        .limit(100)
+        .snapshots()
+        .map((snapshot) {
+          final recipes = snapshot.docs
+              .map((doc) => RecipeModel.fromFirestore(doc))
+              .toList();
+          
+          final now = DateTime.now();
+          final sevenDaysAgo = now.subtract(const Duration(days: 7));
+          
+          // Filter recipes from last 7 days
+          var recentRecipes = recipes
+              .where((r) => r.createdAt.isAfter(sevenDaysAgo))
+              .toList();
+          
+          // If not enough, extend to last 30 days
+          if (recentRecipes.length < limit) {
+            final thirtyDaysAgo = now.subtract(const Duration(days: 30));
+            recentRecipes = recipes
+                .where((r) => r.createdAt.isAfter(thirtyDaysAgo))
+                .toList();
+          }
+          
+          // If still not enough, use all recipes
+          if (recentRecipes.length < limit) {
+            recentRecipes = recipes;
+          }
+          
+          // Sort by engagement score
+          recentRecipes.sort((a, b) => 
+            b.engagementScore.compareTo(a.engagementScore)
+          );
+          
+          return recentRecipes.take(limit).toList();
+        });
+  }
+
+  // Get Popular Recipes (based on likes count)
+  Stream<List<RecipeModel>> getPopularRecipes({int limit = 6}) {
+    return _firestore
+        .collection('recipes')
+        .orderBy('likesCount', descending: true)
+        .limit(limit)
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .map((doc) => RecipeModel.fromFirestore(doc))
+            .toList());
+  }
+
+  // Get Recommended Recipes (based on views count, excluding already shown)
+  Stream<List<RecipeModel>> getRecommendedRecipes({
+    int limit = 6,
+    List<String> excludeIds = const [],
+  }) {
+      return _firestore
+            .collection('recipes')
+            .orderBy('viewsCount', descending: true)
+            .limit(limit + excludeIds.length + 10)
+            .snapshots()
+            .map((snapshot) => snapshot.docs
+                .map((doc) => RecipeModel.fromFirestore(doc))
+                .where((recipe) => !excludeIds.contains(recipe.id))
+                .take(limit)
+                .toList());
+      }
+
+  // Get Popular Creators (based on followers count)
+  Future<List<Map<String, dynamic>>> getPopularCreators({int limit = 5}) async {
+    try {
+      final usersSnapshot = await _firestore
+          .collection('users')
+          .limit(100)
+          .get();
+      
+      List<Map<String, dynamic>> creatorsWithStats = [];
+      
+      for (var userDoc in usersSnapshot.docs) {
+        final userId = userDoc.id;
+        final userData = userDoc.data();
+        
+        // Count followers
+        final followersSnapshot = await _firestore
+            .collection('users')
+            .doc(userId)
+            .collection('followers')
+            .count()
+            .get();
+        
+        final followersCount = followersSnapshot.count ?? 0;
+        
+        // Count recipes
+        final recipesSnapshot = await _firestore
+            .collection('recipes')
+            .where('authorId', isEqualTo: userId)
+            .count()
+            .get();
+        
+        final recipesCount = recipesSnapshot.count ?? 0;
+        
+        // Only include users with recipes or followers
+        if (followersCount > 0 || recipesCount > 0) {
+          creatorsWithStats.add({
+            'userId': userId,
+            // Retrieve actual name from Firestore
+            'name': userData['name'] ?? 
+                   userData['displayName'] ?? 
+                   'User',
+            // Retrieve actual photo URL from Firestore
+            'photoUrl': userData['profileImageUrl'] ?? 
+                       userData['photoURL'],
+            'followersCount': followersCount,
+            'recipesCount': recipesCount,
+          });
+        }
+      }
+      
+      // Sort by followers count
+      creatorsWithStats.sort((a, b) => 
+        (b['followersCount'] as int).compareTo(a['followersCount'] as int)
+      );
+      
+      return creatorsWithStats.take(limit).toList();
+    } catch (e) {
+      debugPrint('Error getting popular creators: $e');
+      return [];
+    }
+  }
+
   // CREATE Recipe
   Future<String> createRecipe(RecipeModel recipe) async {
     try {
@@ -16,7 +161,7 @@ class RecipeService {
       print('Recipe created: ${docRef.id}');
       return docRef.id;
     } catch (e) {
-      print(' Error creating recipe: $e');
+      print('Error creating recipe: $e');
       rethrow;
     }
   }
@@ -33,27 +178,16 @@ class RecipeService {
     }
   }
 
-  // READ Multiple Recipes with Pagination
-  Stream<List<RecipeModel>> getRecipes({
-    int limit = 20,
-    String? lastRecipeId,
-  }) {
-    Query query = _firestore
+  // READ Multiple Recipes with limit
+  Stream<List<RecipeModel>> getRecipes({int limit = 20}) {
+    return _firestore
         .collection('recipes')
         .orderBy('createdAt', descending: true)
-        .limit(limit);
-
-    if (lastRecipeId != null) {
-      query = query.startAfterDocument(
-        _firestore.collection('recipes').doc(lastRecipeId).snapshots() as DocumentSnapshot,
-      );
-    }
-
-    return query.snapshots().map((snapshot) {
-      return snapshot.docs
-          .map((doc) => RecipeModel.fromFirestore(doc))
-          .toList();
-    });
+        .limit(limit)
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .map((doc) => RecipeModel.fromFirestore(doc))
+            .toList());
   }
 
   // READ User's Recipes
@@ -63,11 +197,9 @@ class RecipeService {
         .where('authorId', isEqualTo: userId)
         .orderBy('createdAt', descending: true)
         .snapshots()
-        .map((snapshot) {
-      return snapshot.docs
-          .map((doc) => RecipeModel.fromFirestore(doc))
-          .toList();
-    });
+        .map((snapshot) => snapshot.docs
+            .map((doc) => RecipeModel.fromFirestore(doc))
+            .toList());
   }
 
   // UPDATE Recipe
@@ -86,16 +218,13 @@ class RecipeService {
   // DELETE Recipe
   Future<void> deleteRecipe(String recipeId) async {
     try {
-      // Get recipe first to delete associated images
       final recipe = await getRecipe(recipeId);
       
       if (recipe != null) {
-        // Delete cover image
         if (recipe.coverImageUrl != null) {
           await _deleteImageFromUrl(recipe.coverImageUrl!);
         }
         
-        // Delete step images
         for (var step in recipe.steps) {
           if (step.imageUrl != null) {
             await _deleteImageFromUrl(step.imageUrl!);
@@ -103,7 +232,6 @@ class RecipeService {
         }
       }
 
-      // Delete recipe document
       await _firestore.collection('recipes').doc(recipeId).delete();
       print('Recipe deleted: $recipeId');
     } catch (e) {
@@ -119,11 +247,9 @@ class RecipeService {
         .where('title', isGreaterThanOrEqualTo: query)
         .where('title', isLessThanOrEqualTo: '$query\uf8ff')
         .snapshots()
-        .map((snapshot) {
-      return snapshot.docs
-          .map((doc) => RecipeModel.fromFirestore(doc))
-          .toList();
-    });
+        .map((snapshot) => snapshot.docs
+            .map((doc) => RecipeModel.fromFirestore(doc))
+            .toList());
   }
 
   // LIKE Recipe
@@ -140,13 +266,11 @@ class RecipeService {
         final likeDoc = await transaction.get(likeRef);
 
         if (likeDoc.exists) {
-          // Unlike
           transaction.delete(likeRef);
           transaction.update(recipeRef, {
             'likesCount': (recipeDoc.data()?['likesCount'] ?? 1) - 1,
           });
         } else {
-          // Like
           transaction.set(likeRef, {
             'userId': userId,
             'recipeId': recipeId,
@@ -222,11 +346,9 @@ class RecipeService {
         .collection('comments')
         .orderBy('createdAt', descending: true)
         .snapshots()
-        .map((snapshot) {
-      return snapshot.docs
-          .map((doc) => Comment.fromFirestore(doc))
-          .toList();
-    });
+        .map((snapshot) => snapshot.docs
+            .map((doc) => Comment.fromFirestore(doc))
+            .toList());
   }
 
   // Add Comment
