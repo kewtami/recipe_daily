@@ -19,6 +19,58 @@ class AuthService {
   // Auth state changes stream
   Stream<User?> get authStateChanges => _auth.authStateChanges();
 
+  // Ensure user document has all required fields
+  Future<void> _ensureUserDocumentComplete(String userId) async {
+    try {
+      final userRef = _firestore.collection('users').doc(userId);
+      final userDoc = await userRef.get();
+
+      if (!userDoc.exists) {
+        // Document does not exist, nothing to ensure
+        return;
+      }
+
+      final data = userDoc.data() as Map<String, dynamic>;
+      final updates = <String, dynamic>{};
+
+      // Ensure all counter fields exist
+      if (!data.containsKey('followersCount') || data['followersCount'] == null) {
+        updates['followersCount'] = 0;
+      }
+      if (!data.containsKey('followingCount') || data['followingCount'] == null) {
+        updates['followingCount'] = 0;
+      }
+      if (!data.containsKey('likesReceivedCount') || data['likesReceivedCount'] == null) {
+        updates['likesReceivedCount'] = 0;
+      }
+      if (!data.containsKey('recipesCount') || data['recipesCount'] == null) {
+        updates['recipesCount'] = 0;
+      }
+
+      // Ensure other important fields
+      if (!data.containsKey('displayName') || data['displayName'] == null) {
+        final user = _auth.currentUser;
+        updates['displayName'] = user?.displayName ?? 'User';
+      }
+      if (!data.containsKey('isPublic')) {
+        updates['isPublic'] = true;
+      }
+      if (!data.containsKey('bio')) {
+        updates['bio'] = null;
+      }
+
+      // Always update last login
+      updates['lastLoginAt'] = FieldValue.serverTimestamp();
+
+      if (updates.isNotEmpty) {
+        await userRef.update(updates);
+        print('Ensured ${updates.length} fields for user $userId');
+      }
+    } catch (e) {
+      print('Error ensuring user document: $e');
+    }
+  }
+
   // Sign In with Email & Password
   Future<UserModel?> signIn(String email, String password) async {
     try {
@@ -27,9 +79,9 @@ class AuthService {
         password: password,
       );
       
-      // Update last login
       if (result.user != null) {
-        await _updateLastLogin(result.user!.uid);
+        // Ensure document is complete
+        await _ensureUserDocumentComplete(result.user!.uid);
       }
       
       return _convertToUserModel(result.user);
@@ -73,65 +125,6 @@ class AuthService {
     }
   }
 
-  // Verify OTP
-  Future<bool> verifyOTP(String userId, String otp) async {
-    return await _otpService.verifyOTP(userId: userId, enteredOTP: otp);
-  }
-
-  // Resend OTP
-  Future<void> resendOTP(String userId, String email) async {
-    await _otpService.resendOTP(userId: userId, email: email);
-  }
-
-  // Check if user is verified
-  Future<bool> isUserVerified(String userId) async {
-    return await _otpService.isUserVerified(userId);
-  }
-
-  // Password Reset
-  Future<void> sendPasswordResetEmail(String email) async {
-    try {
-      await _auth.sendPasswordResetEmail(email: email);
-    } catch (e) {
-      rethrow;
-    }
-  }
-
-  // Change Password
-  Future<void> changePassword({
-    required String currentPassword,
-    required String newPassword,
-  }) async {
-    try {
-      final user = _auth.currentUser;
-      if (user == null) {
-        throw Exception('No user logged in');
-      }
-
-      if (currentPassword == newPassword) {
-        throw Exception('New password must be different from current password');
-      }
-
-      final credential = EmailAuthProvider.credential(
-        email: user.email!,
-        password: currentPassword,
-      );
-
-      await user.reauthenticateWithCredential(credential);
-      await user.updatePassword(newPassword);
-    } on FirebaseAuthException catch (e) {
-      if (e.code == 'wrong-password') {
-        throw Exception('Current password is incorrect');
-      } else if (e.code == 'weak-password') {
-        throw Exception('New password is too weak. Please use at least 6 characters');
-      } else {
-        throw Exception(e.message ?? 'Failed to change password');
-      }
-    } catch (e) {
-      rethrow;
-    }
-  }
-
   // Sign In with Google
   Future<UserModel?> signInWithGoogle() async {
     try {
@@ -149,18 +142,22 @@ class AuthService {
 
       UserCredential result = await _auth.signInWithCredential(credential);
       
-      // Check if user document exists, create if not
-      final userDoc = await _firestore.collection('users').doc(result.user!.uid).get();
-      
-      if (!userDoc.exists) {
-        await _createUserDocument(
-          userId: result.user!.uid,
-          email: result.user!.email!,
-          displayName: result.user!.displayName,
-          photoURL: result.user!.photoURL,
-        );
-      } else {
-        await _updateLastLogin(result.user!.uid);
+      // Check if new user
+      if (result.user != null) {
+        final userDoc = await _firestore.collection('users').doc(result.user!.uid).get();
+        
+        if (!userDoc.exists) {
+          // New user - create document
+          await _createUserDocument(
+            userId: result.user!.uid,
+            email: result.user!.email!,
+            displayName: result.user!.displayName,
+            photoURL: result.user!.photoURL,
+          );
+        } else {
+          // Existing user - ensure document is complete
+          await _ensureUserDocumentComplete(result.user!.uid);
+        }
       }
       
       return _convertToUserModel(result.user);
@@ -212,18 +209,6 @@ class AuthService {
     }
   }
 
-  // Sign Out
-  Future<void> signOut() async {
-    try {
-      await Future.wait([
-        _auth.signOut(),
-        _googleSignIn.signOut(),
-      ]);
-    } catch (e) {
-      // Ignore errors, force sign out
-    }
-  }
-
   // Create user document in Firestore
   Future<void> _createUserDocument({
     required String userId,
@@ -234,8 +219,8 @@ class AuthService {
     try {
       await _firestore.collection('users').doc(userId).set({
         'email': email,
-        'displayName': displayName,
-        'name': displayName,
+        'displayName': displayName ?? 'User',
+        'name': displayName ?? 'User',
         'photoURL': photoURL,
         'profileImageUrl': photoURL,
         'bio': null,
@@ -268,7 +253,75 @@ class AuthService {
       print('Updated last login for $userId');
     } catch (e) {
       print('Error updating last login: $e');
-      // Do not throw - this is not critical
+    }
+  }
+
+  // Verify OTP
+  Future<bool> verifyOTP(String userId, String otp) async {
+    return await _otpService.verifyOTP(userId: userId, enteredOTP: otp);
+  }
+
+  Future<void> resendOTP(String userId, String email) async {
+    await _otpService.resendOTP(userId: userId, email: email);
+  }
+
+  Future<bool> isUserVerified(String userId) async {
+    return await _otpService.isUserVerified(userId);
+  }
+
+  Future<void> sendPasswordResetEmail(String email) async {
+    try {
+      await _auth.sendPasswordResetEmail(email: email);
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  // Change Password
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) {
+        throw Exception('No user logged in');
+      }
+
+      if (currentPassword == newPassword) {
+        throw Exception('New password must be different from current password');
+      }
+
+      final credential = EmailAuthProvider.credential(
+        email: user.email!,
+        password: currentPassword,
+      );
+
+      await user.reauthenticateWithCredential(credential);
+      await user.updatePassword(newPassword);
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'wrong-password') {
+        throw Exception('Current password is incorrect');
+      } else if (e.code == 'weak-password') {
+        throw Exception('New password is too weak. Please use at least 6 characters');
+      } else {
+        throw Exception(e.message ?? 'Failed to change password');
+      }
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+
+  // Sign Out
+  Future<void> signOut() async {
+    try {
+      await Future.wait([
+        _auth.signOut(),
+        _googleSignIn.signOut(),
+      ]);
+    } catch (e) {
+      // Ignore errors, force sign out
     }
   }
 
