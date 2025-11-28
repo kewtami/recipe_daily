@@ -3,14 +3,15 @@ import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import 'package:recipe_daily/presentation/providers/user_provider.dart';
 import 'package:recipe_daily/presentation/screens/main/recipes/draft_screen.dart';
-import '../../providers/auth_provider.dart';
-import '../../providers/recipe_provider.dart';
-import '../../providers/interaction_provider.dart';
-import '../../widgets/recipes/recipe_cards.dart';
-import '../../widgets/recipes/recipe_options_bottom_sheet.dart';
-import '../../../core/constants/app_colors.dart';
-import '../../../core/models/recipe_model.dart';
-import 'recipes/recipe_detail_screen.dart';
+import 'edit_profile_screen.dart';
+import '../../../providers/auth_provider.dart';
+import '../../../providers/recipe_provider.dart';
+import '../../../providers/interaction_provider.dart';
+import '../../../widgets/recipes/recipe_cards.dart';
+import '../../../widgets/recipes/recipe_options_bottom_sheet.dart';
+import '../../../../core/constants/app_colors.dart';
+import '../../../../core/models/recipe_model.dart';
+import '../recipes/recipe_detail_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -36,16 +37,20 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     });
     
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user != null) {
-        Provider.of<RecipeProvider>(context, listen: false)
-            .subscribeToUserRecipes(user.uid);
-        Provider.of<UserProvider>(context, listen: false)
-            .subscribeToUserStats(user.uid);
-        Provider.of<UserProvider>(context, listen: false)
-            .loadUserProfile(user.uid);
-      }
+      _loadUserData();
     });
+  }
+
+  void _loadUserData() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      Provider.of<RecipeProvider>(context, listen: false)
+          .subscribeToUserRecipes(user.uid);
+      Provider.of<UserProvider>(context, listen: false)
+          .subscribeToUserStats(user.uid);
+      Provider.of<UserProvider>(context, listen: false)
+          .loadUserProfile(user.uid);
+    }
   }
 
   @override
@@ -58,6 +63,27 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     return user?.providerData.any(
       (provider) => provider.providerId == 'google.com'
     ) ?? false;
+  }
+
+  Future<void> _openEditProfile() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const EditProfileScreen(),
+      ),
+    );
+
+    // Reload data if profile was updated
+    if (result == true && mounted) {
+      // Reload Firebase Auth user
+      await FirebaseAuth.instance.currentUser?.reload();
+      
+      // Reload user data
+      _loadUserData();
+      
+      // Force rebuild
+      setState(() {});
+    }
   }
 
   @override
@@ -98,46 +124,49 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                   child: Column(
                     children: [
                       // Avatar with Edit Icon
-                      Stack(
-                        children: [
-                          CircleAvatar(
-                            radius: 60,
-                            backgroundColor: Colors.grey[300],
-                            backgroundImage: user?.photoURL != null 
-                                ? NetworkImage(user!.photoURL!)
-                                : null,
-                            child: user?.photoURL == null
-                                ? const Icon(
-                                  Icons.person, 
-                                  size: 60, 
+                      GestureDetector(
+                        onTap: _openEditProfile,
+                        child: Stack(
+                          children: [
+                            CircleAvatar(
+                              radius: 60,
+                              backgroundColor: Colors.grey[300],
+                              backgroundImage: (userProfile?['photoURL'] ?? user?.photoURL) != null 
+                                  ? NetworkImage(userProfile?['photoURL'] ?? user!.photoURL!)
+                                  : null,
+                              child: (userProfile?['photoURL'] ?? user?.photoURL) == null
+                                  ? const Icon(
+                                    Icons.person, 
+                                    size: 60, 
+                                    color: Colors.white
+                                  )
+                                  : null,
+                            ),
+                            Positioned(
+                              bottom: 0,
+                              right: 0,
+                              child: Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: const BoxDecoration(
+                                  color: AppColors.primary,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.edit, 
+                                  size: 16, 
                                   color: Colors.white
-                                )
-                                : null,
-                          ),
-                          Positioned(
-                            bottom: 0,
-                            right: 0,
-                            child: Container(
-                              padding: const EdgeInsets.all(4),
-                              decoration: const BoxDecoration(
-                                color: AppColors.primary,
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(
-                                Icons.edit, 
-                                size: 16, 
-                                color: Colors.white
+                                ),
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                       
                       const SizedBox(height: 16),
                       
                       // User Name
                       Text(
-                        user?.displayName ?? 'User',
+                        userProfile?['displayName'] ?? user?.displayName ?? 'User',
                         style: const TextStyle(
                           fontSize: 24,
                           fontWeight: FontWeight.bold,
@@ -167,7 +196,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 40),
                         child: Text(
-                          '"Tell me what you eat, and I will tell you what you are"',
+                          userProfile?['bio'] ?? '"Tell me what you eat, and I will tell you what you are"',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 14,
@@ -382,7 +411,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       );
     }
 
-    // Fetch recipes by IDs using FutureBuilder
     return SliverGrid(
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
@@ -489,6 +517,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 title: const Text('Edit Profile'),
                 onTap: () {
                   Navigator.pop(context);
+                  _openEditProfile();
                 },
               ),
               ListTile(
