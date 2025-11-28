@@ -10,10 +10,17 @@ class RecipeProvider with ChangeNotifier {
   
   List<RecipeModel> _recipes = [];
   List<RecipeModel> _filteredRecipes = [];
+  List<RecipeModel> _trendingRecipes = [];
+  List<RecipeModel> _popularRecipes = [];
+  List<RecipeModel> _recommendedRecipes = [];
+  List<Map<String, dynamic>> _popularCreators = [];
   RecipeModel? _currentRecipe;
   bool _isLoading = false;
   String? _error;
   StreamSubscription? _recipesSubscription;
+  StreamSubscription? _trendingSubscription;
+  StreamSubscription? _popularSubscription;
+  StreamSubscription? _recommendedSubscription;
   
   // Search and filter state
   String _currentSearchQuery = '';
@@ -32,6 +39,10 @@ class RecipeProvider with ChangeNotifier {
   
   // Get original recipes list
   List<RecipeModel> get allRecipes => _recipes;
+  List<RecipeModel> get trendingRecipes => _trendingRecipes;
+  List<RecipeModel> get popularRecipes => _popularRecipes;
+  List<RecipeModel> get recommendedRecipes => _recommendedRecipes;
+  List<Map<String, dynamic>> get popularCreators => _popularCreators;
   
   RecipeModel? get currentRecipe => _currentRecipe;
   bool get isLoading => _isLoading;
@@ -41,13 +52,87 @@ class RecipeProvider with ChangeNotifier {
   void clearCache() {
     _recipes = [];
     _filteredRecipes = [];
+    _trendingRecipes = [];
+    _popularRecipes = [];
+    _recommendedRecipes = [];
+    _popularCreators = [];
     _currentRecipe = null;
     _currentSearchQuery = '';
     _currentDifficulty = null;
     _currentCategory = null;
     _error = null;
     _recipesSubscription?.cancel();
+    _trendingSubscription?.cancel();
+    _popularSubscription?.cancel();
+    _recommendedSubscription?.cancel();
     notifyListeners();
+  }
+
+    // Subscribe to trending
+  void subscribeToTrendingRecipes() {
+    _trendingSubscription?.cancel();
+    _trendingSubscription = _recipeService.getTrendingRecipes(limit: 4).listen(
+      (recipes) {
+        _trendingRecipes = recipes;
+        notifyListeners();
+      },
+      onError: (error) {
+        debugPrint('Error loading trending: $error');
+      },
+    );
+  }
+
+  // Subscribe to popular
+  void subscribeToPopularRecipes() {
+    _popularSubscription?.cancel();
+    _popularSubscription = _recipeService.getPopularRecipes(limit: 6).listen(
+      (recipes) {
+        _popularRecipes = recipes;
+        notifyListeners();
+      },
+      onError: (error) {
+        debugPrint('Error loading popular: $error');
+      },
+    );
+  }
+
+  // Subscribe to recommended
+  void subscribeToRecommendedRecipes() {
+    _recommendedSubscription?.cancel();
+    
+    // Exclude trending + popular IDs
+    final excludeIds = <String>[
+      ..._trendingRecipes.map((r) => r.id),
+      ..._popularRecipes.map((r) => r.id),
+    ];
+    
+    _recommendedSubscription = _recipeService.getRecommendedRecipes(
+      limit: 6,
+      excludeIds: excludeIds,
+    ).listen(
+      (recipes) {
+        _recommendedRecipes = recipes;
+        notifyListeners();
+      },
+      onError: (error) {
+        debugPrint('Error loading recommended: $error');
+      },
+    );
+  }
+
+  // Load popular creators
+  Future<void> loadPopularCreators() async {
+    try {
+      _popularCreators = await _recipeService.getPopularCreators(limit: 5);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error loading creators: $e');
+    }
+  }
+
+  // Track view
+  Future<void> trackView(String recipeId) async {
+    await _recipeService.trackView(recipeId);
   }
 
   // CREATE Recipe
@@ -367,6 +452,9 @@ class RecipeProvider with ChangeNotifier {
   @override
   void dispose() {
     _recipesSubscription?.cancel();
+    _trendingSubscription?.cancel();
+    _popularSubscription?.cancel();
+    _recommendedSubscription?.cancel();
     super.dispose();
   }
 }
