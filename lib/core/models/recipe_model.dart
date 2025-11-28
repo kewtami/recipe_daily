@@ -19,6 +19,9 @@ class RecipeModel {
   final List<String> tags;
   final int totalCalories;
   final int likesCount;
+  final int savesCount;
+  final int commentsCount;
+  final int viewsCount;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -40,9 +43,26 @@ class RecipeModel {
     required this.tags,
     required this.totalCalories,
     this.likesCount = 0,
+    this.savesCount = 0,
+    this.commentsCount = 0,
+    this.viewsCount = 0,
     required this.createdAt,
     required this.updatedAt,
   });
+
+  // Engagement score for sorting
+  double get engagementScore {
+    final likesWeight = likesCount * 2.0;
+    final savesWeight = savesCount * 3.0;
+    final commentsWeight = commentsCount * 4.0;
+    final viewsWeight = viewsCount * 0.5;
+    
+    // Recency boost (7 days)
+    final daysSinceCreated = DateTime.now().difference(createdAt).inDays;
+    final recencyBoost = daysSinceCreated <= 7 ? 1.5 : 1.0;
+    
+    return (likesWeight + savesWeight + commentsWeight + viewsWeight) * recencyBoost;
+  }
 
   // Get scaled ingredients for different servings
   List<Ingredient> getScaledIngredients(int newServings) {
@@ -85,6 +105,9 @@ class RecipeModel {
       tags: List<String>.from(data['tags'] ?? []),
       totalCalories: data['totalCalories'] ?? 0,
       likesCount: data['likesCount'] ?? 0,
+      savesCount: data['savesCount'] ?? 0,
+      commentsCount: data['commentsCount'] ?? 0,
+      viewsCount: data['viewsCount'] ?? 0,
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       updatedAt: (data['updatedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
@@ -108,6 +131,9 @@ class RecipeModel {
       'tags': tags,
       'totalCalories': totalCalories,
       'likesCount': likesCount,
+      'savesCount': savesCount,
+      'commentsCount': commentsCount,
+      'viewsCount': viewsCount,
       'createdAt': Timestamp.fromDate(createdAt),
       'updatedAt': Timestamp.fromDate(updatedAt),
     };
