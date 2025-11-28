@@ -140,6 +140,11 @@ class InteractionService {
         'savedAt': FieldValue.serverTimestamp(),
       });
 
+      // Increment saves count
+      await _firestore.collection('recipes').doc(recipeId).update({
+        'savesCount': FieldValue.increment(1),
+      });
+
       // Create notification
       try {
         final recipeDoc = await _firestore.collection('recipes').doc(recipeId).get();
@@ -163,6 +168,11 @@ class InteractionService {
     } else {
       // Unsave
       await _unsaveRecipeCompletely(recipeId, userId);
+
+      // Decrement saves count
+      await _firestore.collection('recipes').doc(recipeId).update({
+        'savesCount': FieldValue.increment(-1),
+      });
     }
   }
 
@@ -243,6 +253,12 @@ class InteractionService {
       'updatedAt': null,
     });
 
+    // Increment comments count
+    await _firestore.collection('recipes').doc(recipeId).update({
+      'commentsCount': FieldValue.increment(1),
+    });
+
+    // Create notification
     try {
       final recipeDoc = await _firestore.collection('recipes').doc(recipeId).get();
       if (recipeDoc.exists) {
@@ -277,7 +293,21 @@ class InteractionService {
 
   // Delete a comment
   Future<void> deleteComment(String commentId) async {
-    await _firestore.collection('comments').doc(commentId).delete();
+    // Get comment to find associated recipe
+    final commentDoc = await _firestore.collection('comments').doc(commentId).get();
+    if (commentDoc.exists) {
+      final recipeId = commentDoc.data()?['recipeId'] as String?;
+
+      // Delete comment
+      await _firestore.collection('comments').doc(commentId).delete();
+
+      // Decrement comments count
+      if (recipeId != null) {
+        await _firestore.collection('recipes').doc(recipeId).update({
+          'commentsCount': FieldValue.increment(-1),
+        });
+      }
+    }
   }
 
   // Get comments for a recipe
