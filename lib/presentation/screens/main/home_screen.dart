@@ -5,9 +5,12 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/models/recipe_model.dart';
 import '../../providers/recipe_provider.dart';
 import '../../providers/interaction_provider.dart';
-import '../../widgets/recipes/recipe_cards.dart';
-import 'recipes/recipe_detail_screen.dart';
-import 'recipes/search_screen.dart';
+import '../../screens/main/profile/popular_creators_screen.dart';
+import '../../screens/main/profile/user_profile_screen.dart';
+import '../../screens/main/recipes/recipe_detail_screen.dart';
+import '../../screens/main/recipes/search_screen.dart';
+import '../../screens/main/recipes/see_all_recipes_screen.dart';
+import '../../../presentation/widgets/recipes/recipe_cards.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -26,20 +29,33 @@ class _HomeScreenState extends State<HomeScreen> {
       final interactionProvider = Provider.of<InteractionProvider>(context, listen: false);
       final user = FirebaseAuth.instance.currentUser;
       
-      // Clear any lingering search state
       recipeProvider.clearSearch();
       
-      // Load recipes
-      print('Loading recipes from Firebase...');
-      recipeProvider.subscribeToRecipes();
+      print('Loading home sections...');
+      recipeProvider.subscribeToTrendingRecipes();
+      recipeProvider.subscribeToPopularRecipes();
+      recipeProvider.subscribeToRecommendedRecipes();
+      recipeProvider.loadPopularCreators();
       
-      // Subscribe to user interactions
       if (user != null) {
         print('Subscribing to user interactions...');
         interactionProvider.subscribeToLikedRecipes(user.uid);
         interactionProvider.subscribeToSavedRecipes(user.uid);
       }
     });
+  }
+
+  String _formatCount(int count) {
+    if (count >= 1000000) {
+      return '${(count / 1000000).toStringAsFixed(1)}M';
+    } else if (count >= 1000) {
+      final thousands = count / 1000;
+      if (thousands >= 100) {
+        return '${thousands.toStringAsFixed(0)}K';
+      }
+      return '${thousands.toStringAsFixed(2).replaceAll(RegExp(r'\.?0+$'), '')}K';
+    }
+    return count.toString();
   }
 
   @override
@@ -49,16 +65,9 @@ class _HomeScreenState extends State<HomeScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // Header with Logo
             _buildHeader(),
-
-            // Search Bar
             _buildSearchBar(),
-
-            // Main Content
-            Expanded(
-              child: _buildMainContent(),
-            ),
+            Expanded(child: _buildMainContent()),
           ],
         ),
       ),
@@ -141,13 +150,47 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildMainContent() {
     return Consumer<RecipeProvider>(
       builder: (context, provider, _) {
-        if (provider.isLoading) {
+        final hasTrending = provider.trendingRecipes.isNotEmpty;
+        final hasPopular = provider.popularRecipes.isNotEmpty;
+        final hasRecommended = provider.recommendedRecipes.isNotEmpty;
+        final hasCreators = provider.popularCreators.isNotEmpty;
+        
+        final hasAnyContent = hasTrending || hasPopular || hasRecommended || hasCreators;
+
+        // Temporary debug prints
+        print('=== HOME SCREEN DEBUG ===');
+        print('Trending: ${provider.trendingRecipes.length}');
+        print('Popular: ${provider.popularRecipes.length}');
+        print('Recommended: ${provider.recommendedRecipes.length}');
+        print('Creators: ${provider.popularCreators.length}');
+        print('========================');
+
+        if (!hasAnyContent && provider.isLoading) {
           return const Center(
             child: CircularProgressIndicator(color: AppColors.primary),
           );
         }
 
-        final recipes = provider.recipes;
+        if (!hasAnyContent) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.restaurant_menu, size: 64, color: Colors.grey[400]),
+                const SizedBox(height: 16),
+                Text(
+                  'No recipes yet',
+                  style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Be the first to share a recipe!',
+                  style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+                ),
+              ],
+            ),
+          );
+        }
 
         return SingleChildScrollView(
           child: Column(
@@ -155,31 +198,82 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               const SizedBox(height: 24),
               
-              // Trending Section
-              _buildSectionHeader('Trending', onSeeAll: () {}),
-              const SizedBox(height: 12),
-              _buildTrendingSection(recipes.take(5).toList()),
+              // TRENDING (4 recipes)
+              if (hasTrending) ...[
+                _buildSectionHeader(
+                  'Trending', 
+                  onSeeAll: () => _navigateToSeeAll('Trending', provider.trendingRecipes)
+                ),
+                const SizedBox(height: 12),
+                _buildTrendingSection(provider.trendingRecipes),
+                const SizedBox(height: 32),
+              ],
               
-              const SizedBox(height: 32),
+              // POPULAR (6 recipes)
+              if (hasPopular) ...[
+                _buildSectionHeader(
+                  'Popular Recipes', 
+                  onSeeAll: () => _navigateToSeeAll('Popular Recipes', provider.popularRecipes)
+                ),
+                const SizedBox(height: 12),
+                _buildPopularRecipes(provider.popularRecipes),
+                const SizedBox(height: 32),
+              ],
               
-              // Popular Recipes Section
-              _buildSectionHeader('Popular Recipes', onSeeAll: () {}),
-              const SizedBox(height: 12),
-              _buildPopularRecipes(recipes),
+              // RECOMMENDED (6 recipes)
+              if (hasRecommended) ...[
+                _buildSectionHeader(
+                  'Recommend', 
+                  onSeeAll: () => _navigateToSeeAll('Recommend', provider.recommendedRecipes)
+                ),
+                const SizedBox(height: 12),
+                _buildRecommendSection(provider.recommendedRecipes),
+                const SizedBox(height: 32),
+              ],
               
-              const SizedBox(height: 32),
+              // LOADING RECOMMENDED
+              if (!hasRecommended && (hasTrending || hasPopular)) ...[
+                _buildSectionHeader('Recommend', onSeeAll: null),
+                const SizedBox(height: 12),
+                SizedBox(
+                  height: 250,
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            color: AppColors.primary,
+                            strokeWidth: 2,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Loading recommendations...',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 32),
+              ],
               
-              // Recommend Section
-              _buildSectionHeader('Recommend', onSeeAll: () {}),
-              const SizedBox(height: 12),
-              _buildRecommendSection(recipes),
-              
-              const SizedBox(height: 32),
-              
-              // Popular Creators Section
-              _buildSectionHeader('Popular Creators', onSeeAll: () {}),
-              const SizedBox(height: 12),
-              _buildPopularCreators(),
+              // POPULAR CREATORS (5 users)
+              if (hasCreators) ...[
+                _buildSectionHeader(
+                  'Popular Creators', 
+                  onSeeAll: () => _navigateToCreators(provider.popularCreators)
+                ),
+                const SizedBox(height: 12),
+                _buildPopularCreators(provider.popularCreators),
+                const SizedBox(height: 32),
+              ],
               
               const SizedBox(height: 100),
             ],
@@ -254,7 +348,7 @@ class _HomeScreenState extends State<HomeScreen> {
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 20),
-        itemCount: recipes.length > 6 ? 6 : recipes.length,
+        itemCount: recipes.length,
         itemBuilder: (context, index) {
           return Padding(
             padding: const EdgeInsets.only(right: 12),
@@ -287,7 +381,7 @@ class _HomeScreenState extends State<HomeScreen> {
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 20),
-        itemCount: recipes.length > 6 ? 6 : recipes.length,
+        itemCount: recipes.length,
         itemBuilder: (context, index) {
           return Padding(
             padding: const EdgeInsets.only(right: 12),
@@ -314,51 +408,124 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildPopularCreators() {
-    final creators = [
-      {'name': 'Troyan\nSmith', 'image': null},
-      {'name': 'James\nWolden', 'image': null},
-      {'name': 'Niki\nSamantha', 'image': null},
-      {'name': 'Zayn', 'image': null},
-      {'name': 'Robe\nAnn', 'image': null},
-    ];
-
+  Widget _buildPopularCreators(List<Map<String, dynamic>> creators) {
     return SizedBox(
-      height: 120,
+      height: 140,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 20),
         itemCount: creators.length,
         itemBuilder: (context, index) {
           final creator = creators[index];
-          return Container(
-            width: 80,
-            margin: const EdgeInsets.only(right: 16),
-            child: Column(
-              children: [
-                CircleAvatar(
-                  radius: 35,
-                  backgroundColor: Colors.grey[300],
-                  child: Text(
-                    creator['name']!.split('\n')[0][0].toUpperCase(),
-                    style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+          final name = creator['name'] as String;
+          final photoUrl = creator['photoUrl'] as String?;
+          final followersCount = creator['followersCount'] as int;
+          
+          return GestureDetector(
+            onTap: () {
+              final currentUser = FirebaseAuth.instance.currentUser;
+              if (creator['userId'] != currentUser?.uid) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => UserProfileScreen(
+                      userId: creator['userId'] as String,
+                      userName: name,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  creator['name']!,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.secondary,
+                );
+              }
+            },
+            child: Container(
+              width: 100,
+              margin: const EdgeInsets.only(right: 16),
+              child: Column(
+                children: [
+                  Stack(
+                    children: [
+                      CircleAvatar(
+                        radius: 35,
+                        backgroundColor: Colors.grey[300],
+                        backgroundImage: photoUrl != null 
+                            ? NetworkImage(photoUrl) 
+                            : null,
+                        child: photoUrl == null
+                            ? Text(
+                                name[0].toUpperCase(),
+                                style: const TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              )
+                            : null,
+                      ),
+                      if (followersCount > 100)
+                        Positioned(
+                          bottom: 0,
+                          right: 0,
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary,
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 2),
+                            ),
+                            child: const Icon(
+                              Icons.star,
+                              size: 12,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
-                  maxLines: 2,
-                ),
-              ],
+                  const SizedBox(height: 8),
+                  Text(
+                    name,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.secondary,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${_formatCount(followersCount)} followers',
+                    style: TextStyle(fontSize: 10, color: Colors.grey[600]),
+                  ),
+                ],
+              ),
             ),
           );
         },
+      ),
+    );
+  }
+
+  // Navigate to See All Recipes Screen
+  void _navigateToSeeAll(String title, List<RecipeModel> recipes) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => SeeAllRecipesScreen(
+          title: title,
+          recipes: recipes.take(10).toList(),
+        ),
+      ),
+    );
+  }
+
+  // Navigate to Popular Creators Screen
+  void _navigateToCreators(List<Map<String, dynamic>> creators) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PopularCreatorsScreen(
+          creators: creators.take(10).toList(),
+        ),
       ),
     );
   }
