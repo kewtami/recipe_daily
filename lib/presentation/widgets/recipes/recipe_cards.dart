@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:recipe_daily/presentation/widgets/interactions/save_button.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/models/recipe_model.dart';
@@ -30,8 +31,8 @@ class RecipeCard extends StatelessWidget {
 
     // If only showing owner's recipes, and this recipe is not by the user, return empty
     if (showOnlyOwnerRecipes && recipe.authorId != user?.uid) {
-    return const SizedBox.shrink();
-  }
+      return const SizedBox.shrink();
+    }
 
     return GestureDetector(
       onTap: onTap,
@@ -183,7 +184,7 @@ class RecipeCard extends StatelessWidget {
   }
 }
 
-/// Detailed trending recipe card - used in trending sections
+/// Detailed trending recipe card - with real-time author updates
 class TrendingRecipeCard extends StatelessWidget {
   final RecipeModel recipe;
   final VoidCallback onTap;
@@ -206,53 +207,74 @@ class TrendingRecipeCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Author info
-            GestureDetector(
-              onTap: () {
-                final currentUser = FirebaseAuth.instance.currentUser;
-                // Do not navigate if it's current user's recipe
-                if (recipe.authorId != currentUser?.uid) {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => UserProfileScreen(
-                        userId: recipe.authorId,
-                        userName: recipe.authorName,
-                      ),
-                    ),
-                  );
+            // Author info with real-time updates
+            StreamBuilder<DocumentSnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(recipe.authorId)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                // Use recipe data as fallback
+                String authorName = recipe.authorName;
+                String? authorPhotoUrl = recipe.authorPhotoUrl;
+
+                // Update from Firestore if available
+                if (snapshot.hasData && snapshot.data!.exists) {
+                  final userData = snapshot.data!.data() as Map<String, dynamic>?;
+                  if (userData != null) {
+                    authorName = userData['displayName'] ?? authorName;
+                    authorPhotoUrl = userData['photoURL'] ?? authorPhotoUrl;
+                  }
                 }
+
+                return GestureDetector(
+                  onTap: () {
+                    final currentUser = FirebaseAuth.instance.currentUser;
+                    // Navigate to user profile only if not the current user
+                    if (recipe.authorId != currentUser?.uid) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => UserProfileScreen(
+                            userId: recipe.authorId,
+                            userName: authorName,
+                          ),
+                        ),
+                      );
+                    }
+                  },
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 14,
+                        backgroundImage: authorPhotoUrl != null
+                            ? NetworkImage(authorPhotoUrl)
+                            : null,
+                        child: authorPhotoUrl == null
+                            ? Text(
+                                authorName[0].toUpperCase(),
+                                style: const TextStyle(fontSize: 12),
+                              )
+                            : null,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'By $authorName',
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (recipe.authorId != FirebaseAuth.instance.currentUser?.uid)
+                        Icon(
+                          Icons.chevron_right,
+                          size: 16,
+                          color: Colors.grey[400],
+                        ),
+                    ],
+                  ),
+                );
               },
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    radius: 14,
-                    backgroundImage: recipe.authorPhotoUrl != null
-                        ? NetworkImage(recipe.authorPhotoUrl!)
-                        : null,
-                    child: recipe.authorPhotoUrl == null
-                        ? Text(
-                            recipe.authorName[0].toUpperCase(),
-                            style: const TextStyle(fontSize: 12),
-                          )
-                        : null,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'By ${recipe.authorName}',
-                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  if (recipe.authorId != FirebaseAuth.instance.currentUser?.uid)
-                    Icon(
-                      Icons.chevron_right,
-                      size: 16,
-                      color: Colors.grey[400],
-                    ),
-                ],
-              ),
             ),
             const SizedBox(height: 10),
             
@@ -318,7 +340,8 @@ class TrendingRecipeCard extends StatelessWidget {
                                 recipe.id, 
                                 user.uid,
                                 userName: user.displayName ?? 'Unknown User',
-                                userPhotoUrl: user.photoURL,);
+                                userPhotoUrl: user.photoURL,
+                              );
                               if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
@@ -470,13 +493,13 @@ class TrendingRecipeCard extends StatelessWidget {
                   ),
                 ),
                 Text(
-                    recipe.difficulty.displayName,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: AppColors.secondary,
-                      fontWeight: FontWeight.w600,
-                    ),
+                  recipe.difficulty.displayName,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AppColors.secondary,
+                    fontWeight: FontWeight.w600,
                   ),
+                ),
               ],
             ),
           ],
