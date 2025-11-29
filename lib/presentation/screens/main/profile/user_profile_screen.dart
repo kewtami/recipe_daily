@@ -39,6 +39,11 @@ class _UserProfileScreenState extends State<UserProfileScreen>
   int _followingCount = 0;
   int _likesCount = 0;
 
+  // Stream subscriptions for real-time updates
+  Stream<QuerySnapshot>? _recipesStream;
+  Stream<QuerySnapshot>? _followersStream;
+  Stream<QuerySnapshot>? _followingStream;
+
   @override
   void initState() {
     super.initState();
@@ -50,7 +55,8 @@ class _UserProfileScreenState extends State<UserProfileScreen>
       }
     });
     
-    _loadAllData();
+    _loadUserData();
+    _setupRealtimeListeners();
   }
 
   @override
@@ -59,16 +65,74 @@ class _UserProfileScreenState extends State<UserProfileScreen>
     super.dispose();
   }
 
-  // Load everything in correct order
-  Future<void> _loadAllData() async {
-    // Load user data and recipes first
-    await Future.wait([
-      _loadUserData(),
-      _loadUserRecipes(),
-    ]);
+  // Setup real-time listeners for stats
+  void _setupRealtimeListeners() {
+    // Listen to recipes changes
+    _recipesStream = FirebaseFirestore.instance
+        .collection('recipes')
+        .where('authorId', isEqualTo: widget.userId)
+        .snapshots();
+
+    _recipesStream!.listen((snapshot) {
+      if (mounted) {
+        setState(() {
+          _userRecipes = snapshot.docs
+              .map((doc) => RecipeModel.fromFirestore(doc))
+              .toList();
+          _recipesCount = snapshot.docs.length;
+          _isLoadingRecipes = false;
+        });
+        
+        // Calculate total likes from recipes
+        _calculateTotalLikes();
+      }
+    });
+
+    // Listen to followers changes
+    _followersStream = FirebaseFirestore.instance
+        .collection('users')
+        .doc(widget.userId)
+        .collection('followers')
+        .snapshots();
+
+    _followersStream!.listen((snapshot) {
+      if (mounted) {
+        setState(() {
+          _followersCount = snapshot.docs.length;
+        });
+      }
+    });
+
+    // Listen to following changes
+    _followingStream = FirebaseFirestore.instance
+        .collection('users')
+        .doc(widget.userId)
+        .collection('following')
+        .snapshots();
+
+    _followingStream!.listen((snapshot) {
+      if (mounted) {
+        setState(() {
+          _followingCount = snapshot.docs.length;
+        });
+      }
+    });
+  }
+
+  // Calculate total likes from all user recipes
+  void _calculateTotalLikes() {
+    int totalLikes = 0;
+    for (var recipe in _userRecipes) {
+      totalLikes += recipe.likesCount;
+    }
     
-    // Then calculate stats (needs recipes to be loaded)
-    await _loadUserStats();
+    if (mounted) {
+      setState(() {
+        _likesCount = totalLikes;
+      });
+    }
+    
+    debugPrint('Total likes calculated: $totalLikes');
   }
 
   Future<void> _loadUserData() async {
@@ -101,95 +165,6 @@ class _UserProfileScreenState extends State<UserProfileScreen>
           _isLoadingUser = false;
         });
       }
-    }
-  }
-
-  Future<void> _loadUserRecipes() async {
-    try {
-      debugPrint('Loading recipes for user: ${widget.userId}');
-      
-      final recipesSnapshot = await FirebaseFirestore.instance
-          .collection('recipes')
-          .where('authorId', isEqualTo: widget.userId)
-          .orderBy('createdAt', descending: true)
-          .get();
-
-      if (mounted) {
-        setState(() {
-          _userRecipes = recipesSnapshot.docs
-              .map((doc) => RecipeModel.fromFirestore(doc))
-              .toList();
-          _recipesCount = _userRecipes.length;
-          _isLoadingRecipes = false;
-        });
-        debugPrint('Found ${_userRecipes.length} recipes');
-      }
-    } catch (e) {
-      debugPrint('Error loading user recipes: $e');
-      if (mounted) {
-        setState(() {
-          _isLoadingRecipes = false;
-        });
-      }
-    }
-  }
-
-  // Calculate real stats
-  Future<void> _loadUserStats() async {
-    try {
-      debugPrint('Calculating stats for user: ${widget.userId}');
-      
-      // Count followers
-      final followersSnapshot = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(widget.userId)
-          .collection('followers')
-          .get();
-      
-      // Count following
-      final followingSnapshot = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(widget.userId)
-          .collection('following')
-          .get();
-
-      // Count total likes - Use recipe.likesCount from loaded recipes
-      int totalLikes = 0;
-      if (_userRecipes.isNotEmpty) {
-        for (var recipe in _userRecipes) {
-          totalLikes += recipe.likesCount;
-        }
-      }
-
-      if (mounted) {
-        setState(() {
-          _followersCount = followersSnapshot.docs.length;
-          _followingCount = followingSnapshot.docs.length;
-          _likesCount = totalLikes;
-        });
-        
-        debugPrint('Stats calculated:');
-        debugPrint('Recipes: $_recipesCount');
-        debugPrint('Followers: $_followersCount');
-        debugPrint('Following: $_followingCount');
-        debugPrint('Likes: $_likesCount');
-        
-        // Optional: Update Firestore with calculated stats
-        FirebaseFirestore.instance
-            .collection('users')
-            .doc(widget.userId)
-            .update({
-          'recipesCount': _recipesCount,
-          'followersCount': _followersCount,
-          'followingCount': _followingCount,
-          'likesReceivedCount': _likesCount,
-        }).catchError((e) {
-          debugPrint('Could not update Firestore stats: $e');
-        });
-      }
-    } catch (e, stackTrace) {
-      debugPrint('Error calculating stats: $e');
-      debugPrint('Stack trace: $stackTrace');
     }
   }
 
@@ -298,7 +273,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                   
                   const SizedBox(height: 24),
                   
-                  // Stats Row - REAL CALCULATED DATA
+                  // Stats Row - REAL-TIME DATA
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 40),
                     child: Row(
@@ -353,8 +328,8 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                           widget.userName ?? 
                           'User',
                       onFollowChanged: () {
-                        // Refresh stats after follow/unfollow
-                        _loadUserStats();
+                        // Stats will update automatically via streams
+                        debugPrint('Follow status changed');
                       },
                     ),
                   ),
